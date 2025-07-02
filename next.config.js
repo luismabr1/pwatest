@@ -16,9 +16,8 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ["mongodb"],
-  },
+  // Actualizado para Next.js 15
+  serverExternalPackages: ["mongodb"],
   async headers() {
     return [
       {
