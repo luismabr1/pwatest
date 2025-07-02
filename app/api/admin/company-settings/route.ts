@@ -1,11 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { connectToDatabase } from "@/lib/mongodb"
+import clientPromise from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase()
+    const client = await clientPromise;
+    const db = client.db("parking");
 
     let settings = await db.collection("company_settings").findOne({})
 

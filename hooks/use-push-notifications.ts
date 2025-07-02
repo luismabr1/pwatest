@@ -20,7 +20,30 @@ export function usePushNotifications() {
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window) {
       setIsSupported(true)
-      checkSubscription()
+      initializeServiceWorker()
+    }
+  }, [])
+
+  const initializeServiceWorker = useCallback(async () => {
+    try {
+      // Register service worker if not already registered
+      let registration = await navigator.serviceWorker.getRegistration()
+
+      if (!registration) {
+        registration = await navigator.serviceWorker.register("/sw.js", {
+          scope: "/",
+        })
+        console.log("Service Worker registered:", registration)
+      }
+
+      // Wait for service worker to be ready
+      await navigator.serviceWorker.ready
+
+      // Check existing subscription
+      await checkSubscription()
+    } catch (err) {
+      console.error("Error initializing service worker:", err)
+      setError("Error inicializando service worker")
     }
   }, [])
 
@@ -64,13 +87,19 @@ export function usePushNotifications() {
           throw new Error("Permisos de notificación denegados")
         }
 
-        // Get service worker registration
+        // Ensure service worker is ready
         const registration = await navigator.serviceWorker.ready
+
+        // Check if VAPID key is available
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+        if (!vapidKey) {
+          throw new Error("VAPID key no configurada")
+        }
 
         // Subscribe to push notifications
         const pushSubscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""),
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
         })
 
         const subscriptionData = {
@@ -94,16 +123,26 @@ export function usePushNotifications() {
         })
 
         if (!response.ok) {
-          throw new Error("Error guardando suscripción")
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.message || "Error guardando suscripción")
         }
 
         setSubscription(subscriptionData)
         setIsSubscribed(true)
 
+        // Show success message
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("¡Notificaciones Activadas!", {
+            body: "Ahora recibirás notificaciones sobre tu estacionamiento",
+            icon: "/icons/icon-192x192.png",
+          })
+        }
+
         return true
       } catch (err) {
         console.error("Error subscribing to push notifications:", err)
-        setError(err instanceof Error ? err.message : "Error desconocido")
+        const errorMessage = err instanceof Error ? err.message : "Error desconocido"
+        setError(errorMessage)
         return false
       } finally {
         setIsLoading(false)
@@ -127,13 +166,17 @@ export function usePushNotifications() {
       }
 
       // Remove subscription from server
-      await fetch("/api/push-subscriptions", {
+      const response = await fetch("/api/push-subscriptions", {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ subscription }),
       })
+
+      if (!response.ok) {
+        console.warn("Error removing subscription from server")
+      }
 
       setSubscription(null)
       setIsSubscribed(false)

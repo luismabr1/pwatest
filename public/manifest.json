@@ -7,6 +7,18 @@
   "background_color": "#ffffff",
   "theme_color": "#3b82f6",
   "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "screenshots": [
+    {
+      "src": "/icons/screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
   "icons": [
     {
       "src": "/icons/icon-72x72.png",
@@ -57,7 +69,32 @@
       "purpose": "maskable any"
     }
   ],
-  "categories": ["business", "productivity"],
-  "lang": "es",
-  "dir": "ltr"
+  "shortcuts": [
+    {
+      "name": "Buscar Ticket",
+      "short_name": "Buscar",
+      "description": "Buscar un ticket de estacionamiento",
+      "url": "/?action=search",
+      "icons": [
+        {
+          "src": "/icons/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Panel Admin",
+      "short_name": "Admin",
+      "description": "Acceder al panel de administración",
+      "url": "/admin",
+      "icons": [
+        {
+          "src": "/icons/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
 }
