@@ -1,34 +1,39 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Bell, BellOff, Settings, CheckCircle2, AlertCircle } from "lucide-react"
-import { usePushNotifications } from "@/hooks/use-push-notifications"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Bell, BellOff, Settings, CheckCircle2, AlertCircle } from "lucide-react";
+import { usePushNotifications } from "@/hooks/use-push-notifications";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useRouter } from "next/navigation";
 
 interface NotificationSettingsProps {
-  userType?: "user" | "admin"
-  className?: string
+  userType?: "user" | "admin";
+  className?: string;
 }
 
 export default function NotificationSettings({ userType = "user", className = "" }: NotificationSettingsProps) {
-  const { isSupported, isSubscribed, isLoading, error, subscribe, unsubscribe } = usePushNotifications()
+  const { isSupported, isSubscribed, isLoading, error, subscribe, unsubscribe } = usePushNotifications();
+  const router = useRouter();
 
-  const [testNotificationSent, setTestNotificationSent] = useState(false)
+  const [testNotificationSent, setTestNotificationSent] = useState(false);
+  const [testNotificationError, setTestNotificationError] = useState<string | null>(null);
 
   const handleToggleNotifications = async () => {
     if (isSubscribed) {
-      await unsubscribe()
+      await unsubscribe();
     } else {
-      await subscribe(userType)
+      await subscribe(userType);
     }
-  }
+  };
 
   const handleTestNotification = async () => {
     try {
-      const response = await fetch("/api/send-notification", {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+      console.log("🌐 [CLIENT] Enviando solicitud a:", `${baseUrl}/api/send-notification`);
+      const response = await fetch(`${baseUrl}/api/send-notification`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43,16 +48,30 @@ export default function NotificationSettings({ userType = "user", className = ""
             reason: "Notificación de prueba",
           },
         }),
-      })
+      });
 
-      if (response.ok) {
-        setTestNotificationSent(true)
-        setTimeout(() => setTestNotificationSent(false), 3000)
+      console.log("📡 [CLIENT] Respuesta recibida:", {
+        status: response.status,
+        ok: response.ok,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("❌ [CLIENT] Error en notificación:", errorText);
+        setTestNotificationError(`Error: ${response.status} - ${errorText}`);
+        return;
       }
+
+      const result = await response.json();
+      console.log("📦 [CLIENT] Respuesta JSON:", result);
+      setTestNotificationSent(true);
+      setTestNotificationError(null);
+      setTimeout(() => setTestNotificationSent(false), 3000);
     } catch (error) {
-      console.error("Error sending test notification:", error)
+      console.error("❌ [CLIENT] Error enviando notificación:", error);
+      setTestNotificationError("Error al enviar la notificación. Verifica la consola.");
     }
-  }
+  };
 
   if (!isSupported) {
     return (
@@ -72,7 +91,7 @@ export default function NotificationSettings({ userType = "user", className = ""
           </Alert>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
@@ -98,6 +117,13 @@ export default function NotificationSettings({ userType = "user", className = ""
           <Alert>
             <CheckCircle2 className="h-4 w-4" />
             <AlertDescription>¡Notificación de prueba enviada! Deberías verla en unos segundos.</AlertDescription>
+          </Alert>
+        )}
+
+        {testNotificationError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{testNotificationError}</AlertDescription>
           </Alert>
         )}
 
@@ -176,5 +202,5 @@ export default function NotificationSettings({ userType = "user", className = ""
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

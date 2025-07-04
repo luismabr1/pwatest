@@ -4,11 +4,16 @@ import { pushNotificationService } from "@/lib/push-notifications";
 
 export async function POST(request: Request) {
   try {
-    if (process.env.NODE_ENV === "development") {
+    if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
       console.log("🔔 [SEND-NOTIFICATION] Recibida solicitud POST");
       console.log("📡 [SEND-NOTIFICATION] Request method:", request.method);
+      console.log("📡 [SEND-NOTIFICATION] Request URL:", request.url);
       console.log("📡 [SEND-NOTIFICATION] Request headers:", Object.fromEntries(request.headers.entries()));
-      console.log("📦 [SEND-NOTIFICATION] Request body:", await request.json());
+      const requestBody = await request.json().catch((err) => {
+        console.error("❌ [SEND-NOTIFICATION] Error parsing request body:", err);
+        return null;
+      });
+      console.log("📦 [SEND-NOTIFICATION] Request body:", requestBody);
     }
 
     const client = await clientPromise;
@@ -16,7 +21,7 @@ export async function POST(request: Request) {
 
     const { type, ticketCode, userType = "user", data = {} } = await request.json();
 
-    if (process.env.NODE_ENV === "development") {
+    if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
       console.log("🔔 [SEND-NOTIFICATION] Procesando notificación:", {
         type,
         ticketCode,
@@ -34,14 +39,12 @@ export async function POST(request: Request) {
 
     let subscriptions = [];
 
-    // If subscriptions are provided in data, use them directly
     if (data.subscriptions && Array.isArray(data.subscriptions)) {
       subscriptions = data.subscriptions;
-      if (process.env.NODE_ENV === "development") {
+      if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
         console.log("📱 [SEND-NOTIFICATION] Usando suscripciones proporcionadas:", subscriptions.length);
       }
     } else {
-      // Get subscriptions from database based on userType
       if (userType === "admin") {
         const adminSubs = await db
           .collection("push_subscriptions")
@@ -56,13 +59,13 @@ export async function POST(request: Request) {
         subscriptions = ticketSubs.map((sub) => sub.subscription);
       }
 
-      if (process.env.NODE_ENV === "development") {
+      if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
         console.log("🔍 [SEND-NOTIFICATION] Suscripciones obtenidas de BD:", subscriptions.length);
       }
     }
 
     if (subscriptions.length === 0) {
-      if (process.env.NODE_ENV === "development") {
+      if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
         console.log("⚠️ [SEND-NOTIFICATION] No hay suscripciones para enviar");
       }
       return NextResponse.json({
@@ -74,7 +77,6 @@ export async function POST(request: Request) {
 
     let notification;
 
-    // Create notification based on type
     switch (type) {
       case "payment_validated":
         notification = pushNotificationService.createPaymentValidatedNotification(ticketCode, data.amount || 0);
@@ -117,7 +119,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: "Tipo de notificación no válido" }, { status: 400 });
     }
 
-    if (process.env.NODE_ENV === "development") {
+    if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
       console.log("📝 [SEND-NOTIFICATION] Notificación creada:", {
         title: notification.title,
         body: notification.body,
@@ -125,10 +127,9 @@ export async function POST(request: Request) {
       });
     }
 
-    // Send notifications
     const sentCount = await pushNotificationService.sendToMultipleSubscriptions(subscriptions, notification);
 
-    if (process.env.NODE_ENV === "development") {
+    if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
       console.log(`📊 [SEND-NOTIFICATION] Resultado: ${sentCount}/${subscriptions.length} enviadas exitosamente`);
     }
 
