@@ -72,7 +72,7 @@ export function usePushNotifications() {
   }, [])
 
   const subscribe = useCallback(
-    async (userType: "user" | "admin" = "user") => {
+    async (userType: "user" | "admin" = "user", ticketCode: string = "TEST-001") => {
       if (!state.isSupported) {
         setState((prev) => ({ ...prev, error: "Notificaciones no soportadas" }))
         return false
@@ -133,6 +133,7 @@ export function usePushNotifications() {
           body: JSON.stringify({
             subscription: subscription.toJSON(),
             userType,
+            ticketCode, // Added ticketCode to the request
           }),
         })
 
