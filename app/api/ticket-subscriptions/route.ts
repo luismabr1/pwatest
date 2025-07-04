@@ -6,7 +6,21 @@ export async function POST(request: NextRequest) {
   try {
     const { ticketCode, subscription } = await request.json()
 
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔔 [TICKET-SUBSCRIPTION] Registrando suscripción para ticket:", ticketCode)
+      console.log("📱 [TICKET-SUBSCRIPTION] Datos de suscripción:", {
+        endpoint: subscription?.endpoint?.substring(0, 50) + "...",
+        hasKeys: !!subscription?.keys,
+        p256dh: subscription?.keys?.p256dh?.substring(0, 20) + "...",
+        auth: subscription?.keys?.auth?.substring(0, 20) + "...",
+      })
+    }
+
     if (!ticketCode || !subscription) {
+      console.error("❌ [TICKET-SUBSCRIPTION] Faltan parámetros:", {
+        ticketCode: !!ticketCode,
+        subscription: !!subscription,
+      })
       return NextResponse.json({ error: "Código de ticket y suscripción son requeridos" }, { status: 400 })
     }
 
@@ -16,18 +30,25 @@ export async function POST(request: NextRequest) {
     // Verificar que el ticket existe
     const ticket = await db.collection("tickets").findOne({
       codigoTicket: ticketCode,
-      estado: { $in: ["activo", "ocupado", "estacionado_pendiente", "estacionado_confirmado"] },
     })
 
     if (!ticket) {
+      console.error("❌ [TICKET-SUBSCRIPTION] Ticket no encontrado:", ticketCode)
       return NextResponse.json({ error: "Ticket no encontrado o no válido" }, { status: 404 })
     }
 
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ [TICKET-SUBSCRIPTION] Ticket encontrado:", {
+        codigo: ticket.codigoTicket,
+        estado: ticket.estado,
+      })
+    }
+
     // Registrar o actualizar la suscripción para este ticket
-    await db.collection("ticket_subscriptions").updateOne(
+    const result = await db.collection("ticket_subscriptions").updateOne(
       {
         ticketCode: ticketCode,
-        endpoint: subscription.endpoint,
+        "subscription.endpoint": subscription.endpoint,
       },
       {
         $set: {
@@ -45,12 +66,21 @@ export async function POST(request: NextRequest) {
       { upsert: true },
     )
 
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ [TICKET-SUBSCRIPTION] Suscripción guardada:", {
+        ticketCode,
+        matched: result.matchedCount,
+        modified: result.modifiedCount,
+        upserted: result.upsertedCount,
+      })
+    }
+
     return NextResponse.json({
       success: true,
       message: "Suscripción registrada para el ticket",
     })
   } catch (error) {
-    console.error("Error registrando suscripción de ticket:", error)
+    console.error("❌ [TICKET-SUBSCRIPTION] Error registrando suscripción:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }
 }
@@ -76,9 +106,14 @@ export async function GET(request: NextRequest) {
       })
       .toArray()
 
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔍 [TICKET-SUBSCRIPTION] Consultando suscripciones para:", ticketCode)
+      console.log("📊 [TICKET-SUBSCRIPTION] Encontradas:", subscriptions.length, "suscripciones activas")
+    }
+
     return NextResponse.json({ subscriptions })
   } catch (error) {
-    console.error("Error obteniendo suscripciones:", error)
+    console.error("❌ [TICKET-SUBSCRIPTION] Error obteniendo suscripciones:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }
 }

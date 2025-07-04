@@ -1,29 +1,73 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { usePushNotifications } from "./use-push-notifications"
-
-interface TicketNotificationState {
-  isRegistered: boolean
-  isLoading: boolean
-  error: string | null
-}
+import { useState, useEffect } from "react"
 
 export function useTicketNotifications(ticketCode: string) {
-  const { isSupported, isSubscribed, subscription, subscribe } = usePushNotifications()
-  const [state, setState] = useState<TicketNotificationState>({
-    isRegistered: false,
-    isLoading: false,
-    error: null,
-  })
+  const [isSupported, setIsSupported] = useState(false)
+  const [isSubscribed, setIsSubscribed] = useState(false)
+  const [isRegistered, setIsRegistered] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
-  // Registrar automáticamente la suscripción para este ticket
-  const registerForTicket = useCallback(async () => {
-    if (!ticketCode || !subscription) return false
+  useEffect(() => {
+    // Check if push notifications are supported
+    const supported = "serviceWorker" in navigator && "PushManager" in window
+    setIsSupported(supported)
 
-    setState((prev) => ({ ...prev, isLoading: true, error: null }))
+    if (supported) {
+      checkSubscriptionStatus()
+    }
+  }, [ticketCode])
 
+  const checkSubscriptionStatus = async () => {
     try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.getSubscription()
+      setIsSubscribed(!!subscription)
+
+      // Check if this ticket is registered for notifications
+      if (subscription) {
+        // You could check with your backend if this subscription is registered for this ticket
+        // For now, we'll assume it's registered if there's a subscription
+        setIsRegistered(true)
+      }
+    } catch (error) {
+      console.error("Error checking subscription status:", error)
+    }
+  }
+
+  const requestPermission = async (): Promise<NotificationPermission> => {
+    if (!("Notification" in window)) {
+      throw new Error("This browser does not support notifications")
+    }
+
+    let permission = Notification.permission
+
+    if (permission === "default") {
+      permission = await Notification.requestPermission()
+    }
+
+    return permission
+  }
+
+  const enableNotificationsForTicket = async (): Promise<boolean> => {
+    setIsLoading(true)
+    try {
+      // Request permission
+      const permission = await requestPermission()
+      if (permission !== "granted") {
+        return false
+      }
+
+      // Get service worker registration
+      const registration = await navigator.serviceWorker.ready
+
+      // Subscribe to push notifications
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      })
+
+      // Register subscription for this specific ticket
       const response = await fetch("/api/ticket-subscriptions", {
         method: "POST",
         headers: {
@@ -35,59 +79,28 @@ export function useTicketNotifications(ticketCode: string) {
         }),
       })
 
-      if (!response.ok) {
-        throw new Error("Error registrando notificaciones para el ticket")
+      if (response.ok) {
+        setIsSubscribed(true)
+        setIsRegistered(true)
+        return true
+      } else {
+        console.error("Failed to register subscription")
+        return false
       }
-
-      setState((prev) => ({
-        ...prev,
-        isRegistered: true,
-        isLoading: false,
-        error: null,
-      }))
-
-      return true
-    } catch (error) {
-      console.error("Error registering ticket notifications:", error)
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : "Error desconocido",
-      }))
-      return false
-    }
-  }, [ticketCode, subscription])
-
-  // Activar notificaciones con prompt amigable
-  const enableNotificationsForTicket = useCallback(async () => {
-    try {
-      // Primero suscribirse a push notifications
-      const subscribed = await subscribe("user")
-
-      if (subscribed) {
-        // Luego registrar para este ticket específico
-        return await registerForTicket()
-      }
-
-      return false
     } catch (error) {
       console.error("Error enabling notifications:", error)
       return false
+    } finally {
+      setIsLoading(false)
     }
-  }, [subscribe, registerForTicket])
-
-  // Auto-registrar si ya está suscrito
-  useEffect(() => {
-    if (isSubscribed && subscription && ticketCode && !state.isRegistered) {
-      registerForTicket()
-    }
-  }, [isSubscribed, subscription, ticketCode, state.isRegistered, registerForTicket])
+  }
 
   return {
-    ...state,
     isSupported,
     isSubscribed,
+    isRegistered,
+    isLoading,
+    requestPermission,
     enableNotificationsForTicket,
-    registerForTicket,
   }
 }

@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { Ticket, PaymentFormData, CompanySettings } from "@/lib/types"
-import { useTicketNotifications } from "@/hooks/use-ticket-notifications"
+import { useTicketNotifications } from "../hooks/use-ticket-notifications"
 import NotificationPrompt from "./notification-prompt"
 
 // Updated interface to include montoBs and tasaCambio

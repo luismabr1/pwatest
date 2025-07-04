@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { formatDateTime } from "@/lib/utils"
 import { Car, Clock, RefreshCw } from "lucide-react"
 
 interface CarInfo {
@@ -112,7 +113,7 @@ const MobileCarList: React.FC<MobileCarListProps> = ({ onStatsUpdate }) => {
                 </p>
                 <div className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  <span>Ingreso: {formatTime(car.fechaIngreso)}</span>
+                  <span>Ingreso: {car.horaIngreso ? formatDateTime(car.horaIngreso) : "Sin fecha"}</span>
                 </div>
                 <p>Ticket: {car.ticketAsociado}</p>
               </div>
