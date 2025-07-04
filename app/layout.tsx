@@ -9,27 +9,77 @@ import { Toaster as Sonner } from "@/components/ui/sonner"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Sistema de Estacionamiento",
-  description: "Aplicación web para la gestión de pagos de estacionamiento",
-  manifest: "/manifest.json",
+  title: "Parking PWA - Sistema de Estacionamiento",
+  description:
+    "Sistema completo de gestión de estacionamiento con tarifas inteligentes, pagos móviles y panel de administración. Instala la app para acceso rápido y notificaciones.",
+  keywords: ["estacionamiento", "parking", "pwa", "gestión", "pagos", "móvil", "app"],
+  authors: [{ name: "Parking PWA Team" }],
+  creator: "Parking PWA",
+  publisher: "Parking PWA",
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"),
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Parking PWA - Sistema de Estacionamiento",
+    description: "Sistema completo de gestión de estacionamiento. ¡Instala la app para acceso rápido!",
+    url: process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000",
+    siteName: "Parking PWA",
+    locale: "es_ES",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Parking PWA - Sistema de Estacionamiento",
+    description: "Sistema completo de gestión de estacionamiento. ¡Instala la app para acceso rápido!",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Parking App",
+    title: "Parking PWA",
+    startupImage: [
+      {
+        url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 390 844'%3E%3Crect width='390' height='844' fill='%233b82f6'/%3E%3Ctext x='195' y='422' fontFamily='Arial' fontSize='48' fill='white' textAnchor='middle'%3EParking PWA%3C/text%3E%3C/svg%3E",
+        media: "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)",
+      },
+    ],
   },
-  formatDetection: {
-    telephone: false,
+  applicationName: "Parking PWA",
+  referrer: "origin-when-cross-origin",
+  category: "business",
+  classification: "Business Application",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
-  openGraph: {
-    type: "website",
-    siteName: "Sistema de Estacionamiento",
-    title: "Sistema de Estacionamiento",
-    description: "Aplicación web para la gestión de pagos de estacionamiento",
-  },
-  twitter: {
-    card: "summary",
-    title: "Sistema de Estacionamiento",
-    description: "Aplicación web para la gestión de pagos de estacionamiento",
+  manifest: "/manifest.json",
+  icons: {
+    icon: [
+      {
+        url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%233b82f6'/%3E%3Ctext x='50' y='55' fontFamily='Arial' fontSize='40' fill='white' textAnchor='middle'%3EP%3C/text%3E%3C/svg%3E",
+        sizes: "any",
+        type: "image/svg+xml",
+      },
+    ],
+    apple: [
+      {
+        url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%233b82f6'/%3E%3Ctext x='50' y='55' fontFamily='Arial' fontSize='40' fill='white' textAnchor='middle'%3EP%3C/text%3E%3C/svg%3E",
+        sizes: "180x180",
+        type: "image/svg+xml",
+      },
+    ],
   },
 }
 
@@ -42,6 +92,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
 }
 
 export default function RootLayout({
@@ -52,38 +103,54 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/icons/icon-192x192.png" />
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        {/* PWA Meta Tags */}
+        <meta name="application-name" content="Parking PWA" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Parking App" />
+        <meta name="apple-mobile-web-app-title" content="Parking PWA" />
+        <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-TileColor" content="#3b82f6" />
         <meta name="msapplication-tap-highlight" content="no" />
-      </head>
-      <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
-          <Toaster />
-          <Sonner />
-        </ThemeProvider>
+
+        {/* Apple Touch Icon usando SVG inline */}
+        <link
+          rel="apple-touch-icon"
+          href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%233b82f6'/%3E%3Ctext x='50' y='55' fontFamily='Arial' fontSize='40' fill='white' textAnchor='middle'%3EP%3C/text%3E%3C/svg%3E"
+        />
+
+        {/* Favicon usando SVG inline */}
+        <link
+          rel="icon"
+          type="image/svg+xml"
+          href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%233b82f6'/%3E%3Ctext x='50' y='55' fontFamily='Arial' fontSize='40' fill='white' textAnchor='middle'%3EP%3C/text%3E%3C/svg%3E"
+        />
+
+        {/* Service Worker Registration */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                  navigator.serviceWorker.register('/sw.js')
                     .then(function(registration) {
-                      console.log('SW registered: ', registration);
+                      console.log('✅ SW registrado:', registration.scope);
                     })
-                    .catch(function(registrationError) {
-                      console.log('SW registration failed: ', registrationError);
+                    .catch(function(error) {
+                      console.log('❌ SW falló:', error);
                     });
                 });
               }
             `,
           }}
         />
+      </head>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          {children}
+          <Toaster />
+          <Sonner />
+        </ThemeProvider>
       </body>
     </html>
   )
