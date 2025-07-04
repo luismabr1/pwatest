@@ -1,77 +1,68 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Bell, BellOff, Settings, CheckCircle2, AlertCircle } from "lucide-react";
-import { usePushNotifications } from "@/hooks/use-push-notifications";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useRouter } from "next/navigation";
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Bell, BellOff, Settings, CheckCircle2, AlertCircle, Download } from "lucide-react"
+import { usePushNotifications } from "@/hooks/use-push-notifications"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface NotificationSettingsProps {
-  userType?: "user" | "admin";
-  className?: string;
+  userType?: "user" | "admin"
+  className?: string
 }
 
 export default function NotificationSettings({ userType = "user", className = "" }: NotificationSettingsProps) {
-  const { isSupported, isSubscribed, isLoading, error, subscribe, unsubscribe } = usePushNotifications();
-  const router = useRouter();
-
-  const [testNotificationSent, setTestNotificationSent] = useState(false);
-  const [testNotificationError, setTestNotificationError] = useState<string | null>(null);
+  const { isSupported, isSubscribed, isLoading, error, subscribe, unsubscribe } = usePushNotifications()
+  const [testNotificationSent, setTestNotificationSent] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<(() => void) | null>(null)
 
   const handleToggleNotifications = async () => {
     if (isSubscribed) {
-      await unsubscribe();
+      await unsubscribe()
     } else {
-      await subscribe(userType);
+      await subscribe(userType)
     }
-  };
+  }
 
   const handleTestNotification = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-      console.log("🌐 [CLIENT] Enviando solicitud a:", `${baseUrl}/api/send-notification`);
-      const response = await fetch(`${baseUrl}/api/send-notification`, {
+      const response = await fetch("/api/send-notification", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: userType === "admin" ? "admin_payment" : "payment_validated",
           ticketCode: "TEST-001",
           userType,
-          data: {
-            amount: 50.0,
-            plate: "ABC-123",
-            reason: "Notificación de prueba",
-          },
+          data: { amount: 50.0, plate: "ABC-123", reason: "Notificación de prueba" },
         }),
-      });
+      })
 
-      console.log("📡 [CLIENT] Respuesta recibida:", {
-        status: response.status,
-        ok: response.ok,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ [CLIENT] Error en notificación:", errorText);
-        setTestNotificationError(`Error: ${response.status} - ${errorText}`);
-        return;
+      if (response.ok) {
+        setTestNotificationSent(true)
+        setTimeout(() => setTestNotificationSent(false), 3000)
       }
-
-      const result = await response.json();
-      console.log("📦 [CLIENT] Respuesta JSON:", result);
-      setTestNotificationSent(true);
-      setTestNotificationError(null);
-      setTimeout(() => setTestNotificationSent(false), 3000);
     } catch (error) {
-      console.error("❌ [CLIENT] Error enviando notificación:", error);
-      setTestNotificationError("Error al enviar la notificación. Verifica la consola.");
+      console.error("Error sending test notification:", error)
     }
-  };
+  }
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      const promptEvent = e as BeforeInstallPromptEvent
+      promptEvent.preventDefault()
+      setInstallPrompt(() => () => {
+        promptEvent.prompt()
+        promptEvent.userChoice.then((choice) => {
+          if (choice.outcome === "accepted") console.log("PWA instalado por el usuario")
+        })
+      })
+      window.addEventListener("appinstalled", () => console.log("PWA instalada"))
+    }
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+  }, [])
 
   if (!isSupported) {
     return (
@@ -91,7 +82,7 @@ export default function NotificationSettings({ userType = "user", className = ""
           </Alert>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   return (
@@ -120,13 +111,6 @@ export default function NotificationSettings({ userType = "user", className = ""
           </Alert>
         )}
 
-        {testNotificationError && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{testNotificationError}</AlertDescription>
-          </Alert>
-        )}
-
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -137,11 +121,7 @@ export default function NotificationSettings({ userType = "user", className = ""
                   : "Recibe actualizaciones sobre tus pagos y vehículo"}
               </p>
             </div>
-            <Button
-              onClick={handleToggleNotifications}
-              disabled={isLoading}
-              variant={isSubscribed ? "destructive" : "default"}
-            >
+            <Button onClick={handleToggleNotifications} disabled={isLoading} variant={isSubscribed ? "destructive" : "default"}>
               {isLoading ? (
                 "Procesando..."
               ) : isSubscribed ? (
@@ -175,6 +155,15 @@ export default function NotificationSettings({ userType = "user", className = ""
               </Button>
             </div>
           )}
+
+          {installPrompt && (
+            <div className="pt-2 border-t">
+              <Button onClick={installPrompt} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Instalar Aplicación
+              </Button>
+            </div>
+          )}
         </div>
 
         {userType === "user" && (
@@ -202,5 +191,5 @@ export default function NotificationSettings({ userType = "user", className = ""
         )}
       </CardContent>
     </Card>
-  );
+  )
 }

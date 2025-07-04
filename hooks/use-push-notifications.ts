@@ -69,8 +69,8 @@ export function usePushNotifications() {
             })
           }
           window.addEventListener("appinstalled", () => console.log("PWA instalada"))
-          // Trigger install prompt via UI (e.g., button click) or automatically here
-          installPrompt()
+          // Example: Trigger via UI button or automatically
+          // Add a button in NotificationSettings to call installPrompt()
         }
         window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
         return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
