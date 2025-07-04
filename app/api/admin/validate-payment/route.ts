@@ -37,6 +37,9 @@ export async function POST(request: NextRequest) {
     const now = new Date();
 
     // Actualizar el pago
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔄 [VALIDATE-PAYMENT] Actualizando estado del pago:", pagoId);
+    }
     await db.collection("pagos").updateOne(
       { _id: new ObjectId(pagoId) },
       {
@@ -48,8 +51,14 @@ export async function POST(request: NextRequest) {
         },
       },
     );
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ [VALIDATE-PAYMENT] Pago actualizado:", pagoId);
+    }
 
     // Actualizar el ticket
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔄 [VALIDATE-PAYMENT] Actualizando estado del ticket:", pago.codigoTicket);
+    }
     await db.collection("tickets").updateOne(
       { codigoTicket: pago.codigoTicket },
       {
@@ -59,11 +68,26 @@ export async function POST(request: NextRequest) {
         },
       },
     );
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ [VALIDATE-PAYMENT] Ticket actualizado:", pago.codigoTicket);
+    }
 
     // Get car info for notification
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔍 [VALIDATE-PAYMENT] Buscando información del vehículo:", pago.codigoTicket);
+    }
     const car = await db.collection("cars").findOne({ ticketAsociado: pago.codigoTicket });
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ [VALIDATE-PAYMENT] Vehículo encontrado:", {
+        placa: car?.placa || "N/A",
+        ticket: pago.codigoTicket,
+      });
+    }
 
     // Registrar en car_history
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔄 [VALIDATE-PAYMENT] Actualizando historial del vehículo:", pago.codigoTicket);
+    }
     const carHistoryUpdate = {
       $push: {
         eventos: {
@@ -105,6 +129,9 @@ export async function POST(request: NextRequest) {
     };
 
     await db.collection("car_history").updateOne({ ticketAsociado: pago.codigoTicket }, carHistoryUpdate);
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ [VALIDATE-PAYMENT] Historial actualizado:", pago.codigoTicket);
+    }
 
     // Send notification to ticket subscriptions
     try {
@@ -134,10 +161,21 @@ export async function POST(request: NextRequest) {
       if (ticketSubscriptions.length > 0) {
         if (process.env.NODE_ENV === "development") {
           console.log(
-            "📤 [VALIDATE-PAYMENT] Enviando notificación a",
+            "📤 [VALIDATE-PAYMENT] Preparando solicitud de notificación a",
             ticketSubscriptions.length,
             "dispositivos",
           );
+          console.log("🌐 [VALIDATE-PAYMENT] URL de notificación:", `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`);
+          console.log("📦 [VALIDATE-PAYMENT] Cuerpo de la solicitud:", {
+            type: "payment_validated",
+            ticketCode: pago.codigoTicket,
+            userType: "user",
+            data: {
+              amount: pago.montoPagado,
+              plate: car?.placa || "N/A",
+              subscriptions: ticketSubscriptions.map((sub) => sub.subscription),
+            },
+          });
         }
 
         const notificationResponse = await fetch(
@@ -159,6 +197,13 @@ export async function POST(request: NextRequest) {
             }),
           },
         );
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("📡 [VALIDATE-PAYMENT] Respuesta inicial del fetch:", {
+            status: notificationResponse.status,
+            ok: notificationResponse.ok,
+          });
+        }
 
         if (!notificationResponse.ok) {
           const errorText = await notificationResponse.text();

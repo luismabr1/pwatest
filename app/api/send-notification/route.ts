@@ -4,6 +4,13 @@ import { pushNotificationService } from "@/lib/push-notifications";
 
 export async function POST(request: Request) {
   try {
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔔 [SEND-NOTIFICATION] Recibida solicitud POST");
+      console.log("📡 [SEND-NOTIFICATION] Request method:", request.method);
+      console.log("📡 [SEND-NOTIFICATION] Request headers:", Object.fromEntries(request.headers.entries()));
+      console.log("📦 [SEND-NOTIFICATION] Request body:", await request.json());
+    }
+
     const client = await clientPromise;
     const db = client.db("parking");
 
@@ -18,7 +25,6 @@ export async function POST(request: Request) {
         subscriptionsProvided: !!data.subscriptions,
         subscriptionsCount: data.subscriptions?.length || 0,
       });
-      console.log("📡 [SEND-NOTIFICATION] Request headers:", Object.fromEntries(request.headers.entries()));
     }
 
     if (!type || !ticketCode) {
