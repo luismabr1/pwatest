@@ -3,17 +3,14 @@ import clientPromise from "@/lib/mongodb";
 
 export async function POST(request: Request) {
   try {
-    const { subscription, userType } = await request.json();
+    const { subscription, userType, ticketCode } = await request.json();
     const client = await clientPromise;
     const db = client.db("parking");
 
-    // Validate input
-    if (!subscription?.endpoint || !userType) {
-      return NextResponse.json({ message: "Endpoint y userType son requeridos" }, { status: 400 });
+    if (!subscription?.endpoint || !userType || !ticketCode) {
+      return NextResponse.json({ message: "Endpoint, userType y ticketCode son requeridos" }, { status: 400 });
     }
 
-    // Save or update subscription
-    const ticketCode = subscription.data?.ticketCode || "TEST-001"; // Default or dynamic ticketCode if provided
     await db.collection("ticket_subscriptions").updateOne(
       { endpoint: subscription.endpoint },
       {

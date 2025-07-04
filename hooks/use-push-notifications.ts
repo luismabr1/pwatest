@@ -19,7 +19,7 @@ export function usePushNotifications() {
     subscription: null,
   })
 
-  // Check if push notifications are supported
+  // Check if push notifications are supported and handle PWA install prompt
   useEffect(() => {
     const checkSupport = async () => {
       if (typeof window === "undefined") return
@@ -36,14 +36,11 @@ export function usePushNotifications() {
       }
 
       try {
-        // Wait for service worker to be ready
         await navigator.serviceWorker.ready
 
-        // Check existing subscription
         const registration = await navigator.serviceWorker.getRegistration()
         if (registration) {
           const existingSubscription = await registration.pushManager.getSubscription()
-
           setState((prev) => ({
             ...prev,
             isSupported: true,
@@ -58,6 +55,25 @@ export function usePushNotifications() {
             error: null,
           }))
         }
+
+        // Handle PWA install prompt
+        const handleBeforeInstallPrompt = (e: Event) => {
+          const promptEvent = e as BeforeInstallPromptEvent
+          promptEvent.preventDefault()
+          const installPrompt = () => {
+            promptEvent.prompt()
+            promptEvent.userChoice.then((choice) => {
+              if (choice.outcome === "accepted") {
+                console.log("PWA instalado por el usuario")
+              }
+            })
+          }
+          window.addEventListener("appinstalled", () => console.log("PWA instalada"))
+          // Trigger install prompt via UI (e.g., button click) or automatically here
+          installPrompt()
+        }
+        window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+        return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
       } catch (error) {
         console.error("Error checking support:", error)
         setState((prev) => ({
@@ -82,8 +98,6 @@ export function usePushNotifications() {
 
       try {
         console.log("Requesting notification permission...")
-
-        // Request notification permission
         const permission = await Notification.requestPermission()
         console.log("Permission result:", permission)
 
@@ -92,53 +106,34 @@ export function usePushNotifications() {
         }
 
         console.log("Getting service worker registration...")
-
-        // Get service worker registration
         const registration = await navigator.serviceWorker.ready
         console.log("Service worker ready:", registration)
 
-        // Check for existing subscription first
         let subscription = await registration.pushManager.getSubscription()
         console.log("Existing subscription:", subscription)
 
         if (!subscription) {
           console.log("Creating new subscription...")
-
-          // Get VAPID public key
           const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-
           if (!vapidPublicKey) {
             throw new Error("Clave VAPID pública no configurada. Verifica tu archivo .env.local")
           }
-
           console.log("VAPID key available, subscribing...")
-
-          // Create new subscription
           subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
           })
-
           console.log("New subscription created:", subscription)
         }
 
         console.log("Sending subscription to server...")
-
-        // Send subscription to server
         const response = await fetch("/api/push-subscriptions", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            subscription: subscription.toJSON(),
-            userType,
-            ticketCode, // Added ticketCode to the request
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: subscription.toJSON(), userType, ticketCode }),
         })
 
         console.log("Server response status:", response.status)
-
         if (!response.ok) {
           const errorText = await response.text()
           console.error("Server error:", errorText)
@@ -156,12 +151,11 @@ export function usePushNotifications() {
           error: null,
         }))
 
-        // Show success notification
         try {
           await registration.showNotification("¡Notificaciones Activadas!", {
             body: "Ahora recibirás actualizaciones sobre tus pagos y vehículo",
-            icon: "/favicon.ico",
-            badge: "/favicon.ico",
+            icon: "/icons/icon-192x192.png", // Updated to existing icon
+            badge: "/icons/icon-72x72.png",
             tag: "subscription-success",
             requireInteraction: false,
           })
@@ -173,7 +167,6 @@ export function usePushNotifications() {
       } catch (error) {
         console.error("Error subscribing to push notifications:", error)
         const errorMessage = error instanceof Error ? error.message : "Error desconocido al activar notificaciones"
-
         setState((prev) => ({
           ...prev,
           isLoading: false,
@@ -192,18 +185,12 @@ export function usePushNotifications() {
 
     try {
       console.log("Unsubscribing from push notifications...")
-
       await state.subscription.unsubscribe()
 
-      // Remove from server
       await fetch("/api/push-subscriptions", {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          endpoint: state.subscription.endpoint,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: state.subscription.endpoint }),
       })
 
       setState((prev) => ({
@@ -245,4 +232,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     outputArray[i] = rawData.charCodeAt(i)
   }
   return outputArray
+}
+
+// Type definition for BeforeInstallPromptEvent
+interface BeforeInstallPromptEvent extends Event {
+  preventDefault: () => void
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
 }
