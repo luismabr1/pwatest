@@ -2,208 +2,237 @@
 
 import { useState, useEffect, useCallback } from "react"
 
-interface PushSubscription {
-  endpoint: string
-  keys: {
-    p256dh: string
-    auth: string
-  }
+interface PushNotificationState {
+  isSupported: boolean
+  isSubscribed: boolean
+  isLoading: boolean
+  error: string | null
+  subscription: PushSubscription | null
 }
 
 export function usePushNotifications() {
-  const [isSupported, setIsSupported] = useState(false)
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null)
-  const [isSubscribed, setIsSubscribed] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState] = useState<PushNotificationState>({
+    isSupported: false,
+    isSubscribed: false,
+    isLoading: false,
+    error: null,
+    subscription: null,
+  })
 
+  // Check if push notifications are supported
   useEffect(() => {
-    if (typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window) {
-      setIsSupported(true)
-      initializeServiceWorker()
-    }
-  }, [])
+    const checkSupport = async () => {
+      if (typeof window === "undefined") return
 
-  const initializeServiceWorker = useCallback(async () => {
-    try {
-      // Register service worker if not already registered
-      let registration = await navigator.serviceWorker.getRegistration()
+      const isSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window
 
-      if (!registration) {
-        registration = await navigator.serviceWorker.register("/sw.js", {
-          scope: "/",
-        })
-        console.log("Service Worker registered:", registration)
+      if (!isSupported) {
+        setState((prev) => ({
+          ...prev,
+          isSupported: false,
+          error: "Las notificaciones push no son compatibles con este navegador",
+        }))
+        return
       }
 
-      // Wait for service worker to be ready
-      await navigator.serviceWorker.ready
+      try {
+        // Wait for service worker to be ready
+        await navigator.serviceWorker.ready
 
-      // Check existing subscription
-      await checkSubscription()
-    } catch (err) {
-      console.error("Error initializing service worker:", err)
-      setError("Error inicializando service worker")
-    }
-  }, [])
+        // Check existing subscription
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (registration) {
+          const existingSubscription = await registration.pushManager.getSubscription()
 
-  const checkSubscription = useCallback(async () => {
-    try {
-      const registration = await navigator.serviceWorker.ready
-      const existingSubscription = await registration.pushManager.getSubscription()
-
-      if (existingSubscription) {
-        const subscriptionData = {
-          endpoint: existingSubscription.endpoint,
-          keys: {
-            p256dh: arrayBufferToBase64(existingSubscription.getKey("p256dh")!),
-            auth: arrayBufferToBase64(existingSubscription.getKey("auth")!),
-          },
+          setState((prev) => ({
+            ...prev,
+            isSupported: true,
+            isSubscribed: !!existingSubscription,
+            subscription: existingSubscription,
+            error: null,
+          }))
+        } else {
+          setState((prev) => ({
+            ...prev,
+            isSupported: true,
+            error: null,
+          }))
         }
-        setSubscription(subscriptionData)
-        setIsSubscribed(true)
+      } catch (error) {
+        console.error("Error checking support:", error)
+        setState((prev) => ({
+          ...prev,
+          isSupported: true,
+          error: "Error al verificar el soporte de notificaciones",
+        }))
       }
-    } catch (err) {
-      console.error("Error checking subscription:", err)
-      setError("Error verificando suscripción")
     }
+
+    checkSupport()
   }, [])
 
   const subscribe = useCallback(
     async (userType: "user" | "admin" = "user") => {
-      if (!isSupported) {
-        setError("Las notificaciones push no están soportadas")
+      if (!state.isSupported) {
+        setState((prev) => ({ ...prev, error: "Notificaciones no soportadas" }))
         return false
       }
 
-      setIsLoading(true)
-      setError(null)
+      setState((prev) => ({ ...prev, isLoading: true, error: null }))
 
       try {
+        console.log("Requesting notification permission...")
+
         // Request notification permission
         const permission = await Notification.requestPermission()
+        console.log("Permission result:", permission)
 
         if (permission !== "granted") {
           throw new Error("Permisos de notificación denegados")
         }
 
-        // Ensure service worker is ready
+        console.log("Getting service worker registration...")
+
+        // Get service worker registration
         const registration = await navigator.serviceWorker.ready
+        console.log("Service worker ready:", registration)
 
-        // Check if VAPID key is available
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-        if (!vapidKey) {
-          throw new Error("VAPID key no configurada")
+        // Check for existing subscription first
+        let subscription = await registration.pushManager.getSubscription()
+        console.log("Existing subscription:", subscription)
+
+        if (!subscription) {
+          console.log("Creating new subscription...")
+
+          // Get VAPID public key
+          const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+
+          if (!vapidPublicKey) {
+            throw new Error("Clave VAPID pública no configurada. Verifica tu archivo .env.local")
+          }
+
+          console.log("VAPID key available, subscribing...")
+
+          // Create new subscription
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          })
+
+          console.log("New subscription created:", subscription)
         }
 
-        // Subscribe to push notifications
-        const pushSubscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidKey),
-        })
+        console.log("Sending subscription to server...")
 
-        const subscriptionData = {
-          endpoint: pushSubscription.endpoint,
-          keys: {
-            p256dh: arrayBufferToBase64(pushSubscription.getKey("p256dh")!),
-            auth: arrayBufferToBase64(pushSubscription.getKey("auth")!),
-          },
-        }
-
-        // Save subscription to server
+        // Send subscription to server
         const response = await fetch("/api/push-subscriptions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            subscription: subscriptionData,
+            subscription: subscription.toJSON(),
             userType,
           }),
         })
 
+        console.log("Server response status:", response.status)
+
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.message || "Error guardando suscripción")
+          const errorText = await response.text()
+          console.error("Server error:", errorText)
+          throw new Error(`Error del servidor: ${response.status}`)
         }
 
-        setSubscription(subscriptionData)
-        setIsSubscribed(true)
+        const result = await response.json()
+        console.log("Server response:", result)
 
-        // Show success message
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("¡Notificaciones Activadas!", {
-            body: "Ahora recibirás notificaciones sobre tu estacionamiento",
-            icon: "/icons/icon-192x192.png",
+        setState((prev) => ({
+          ...prev,
+          isSubscribed: true,
+          isLoading: false,
+          subscription,
+          error: null,
+        }))
+
+        // Show success notification
+        try {
+          await registration.showNotification("¡Notificaciones Activadas!", {
+            body: "Ahora recibirás actualizaciones sobre tus pagos y vehículo",
+            icon: "/favicon.ico",
+            badge: "/favicon.ico",
+            tag: "subscription-success",
+            requireInteraction: false,
           })
+        } catch (notifError) {
+          console.warn("Could not show success notification:", notifError)
         }
 
         return true
-      } catch (err) {
-        console.error("Error subscribing to push notifications:", err)
-        const errorMessage = err instanceof Error ? err.message : "Error desconocido"
-        setError(errorMessage)
+      } catch (error) {
+        console.error("Error subscribing to push notifications:", error)
+        const errorMessage = error instanceof Error ? error.message : "Error desconocido al activar notificaciones"
+
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage,
+        }))
         return false
-      } finally {
-        setIsLoading(false)
       }
     },
-    [isSupported],
+    [state.isSupported],
   )
 
   const unsubscribe = useCallback(async () => {
-    if (!subscription) return false
+    if (!state.subscription) return false
 
-    setIsLoading(true)
-    setError(null)
+    setState((prev) => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      const registration = await navigator.serviceWorker.ready
-      const pushSubscription = await registration.pushManager.getSubscription()
+      console.log("Unsubscribing from push notifications...")
 
-      if (pushSubscription) {
-        await pushSubscription.unsubscribe()
-      }
+      await state.subscription.unsubscribe()
 
-      // Remove subscription from server
-      const response = await fetch("/api/push-subscriptions", {
+      // Remove from server
+      await fetch("/api/push-subscriptions", {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ subscription }),
+        body: JSON.stringify({
+          endpoint: state.subscription.endpoint,
+        }),
       })
 
-      if (!response.ok) {
-        console.warn("Error removing subscription from server")
-      }
-
-      setSubscription(null)
-      setIsSubscribed(false)
+      setState((prev) => ({
+        ...prev,
+        isSubscribed: false,
+        isLoading: false,
+        subscription: null,
+        error: null,
+      }))
 
       return true
-    } catch (err) {
-      console.error("Error unsubscribing from push notifications:", err)
-      setError(err instanceof Error ? err.message : "Error desconocido")
+    } catch (error) {
+      console.error("Error unsubscribing from push notifications:", error)
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Error al desactivar notificaciones",
+      }))
       return false
-    } finally {
-      setIsLoading(false)
     }
-  }, [subscription])
+  }, [state.subscription])
 
   return {
-    isSupported,
-    subscription,
-    isSubscribed,
-    isLoading,
-    error,
+    ...state,
     subscribe,
     unsubscribe,
-    checkSubscription,
   }
 }
 
-// Utility functions
+// Utility function to convert VAPID key
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
@@ -215,13 +244,4 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     outputArray[i] = rawData.charCodeAt(i)
   }
   return outputArray
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  let binary = ""
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return window.btoa(binary)
 }

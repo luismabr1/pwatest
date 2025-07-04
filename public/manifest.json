@@ -1,7 +1,7 @@
 {
-  "name": "Sistema de Estacionamiento",
-  "short_name": "Parking App",
-  "description": "Aplicación web para la gestión de pagos de estacionamiento",
+  "name": "Parking PWA",
+  "short_name": "ParkingPWA",
+  "description": "Sistema de gestión de estacionamiento",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -9,64 +9,13 @@
   "orientation": "portrait-primary",
   "scope": "/",
   "lang": "es",
-  "dir": "ltr",
   "categories": ["business", "productivity"],
-  "screenshots": [
-    {
-      "src": "/icons/screenshot-mobile.png",
-      "sizes": "390x844",
-      "type": "image/png",
-      "form_factor": "narrow"
-    }
-  ],
   "icons": [
     {
-      "src": "/icons/icon-72x72.png",
-      "sizes": "72x72",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-96x96.png",
-      "sizes": "96x96",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-128x128.png",
-      "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-144x144.png",
-      "sizes": "144x144",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-152x152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable any"
+      "src": "/favicon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
@@ -74,25 +23,13 @@
       "name": "Buscar Ticket",
       "short_name": "Buscar",
       "description": "Buscar un ticket de estacionamiento",
-      "url": "/?action=search",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
+      "url": "/?shortcut=search"
     },
     {
-      "name": "Panel Admin",
+      "name": "Admin",
       "short_name": "Admin",
-      "description": "Acceder al panel de administración",
-      "url": "/admin",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
+      "description": "Panel de administración",
+      "url": "/admin?shortcut=admin"
     }
   ],
   "related_applications": [],

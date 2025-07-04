@@ -3,19 +3,27 @@ import clientPromise from "@/lib/mongodb"
 
 export async function POST(request: Request) {
   try {
+    console.log("POST /api/push-subscriptions - Starting...")
+
     const client = await clientPromise
     const db = client.db("parking")
 
-    const { subscription, userType = "user" } = await request.json()
+    const body = await request.json()
+    console.log("Request body received:", { hasSubscription: !!body.subscription, userType: body.userType })
+
+    const { subscription, userType = "user" } = body
 
     if (!subscription || !subscription.endpoint) {
+      console.error("Invalid subscription:", subscription)
       return NextResponse.json({ message: "Suscripción inválida" }, { status: 400 })
     }
 
     const now = new Date()
 
+    console.log("Saving subscription to database...")
+
     // Save or update subscription
-    await db.collection("push_subscriptions").updateOne(
+    const result = await db.collection("push_subscriptions").updateOne(
       { endpoint: subscription.endpoint },
       {
         $set: {
@@ -31,6 +39,12 @@ export async function POST(request: Request) {
       { upsert: true },
     )
 
+    console.log("Database operation result:", {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+      upsertedCount: result.upsertedCount,
+    })
+
     if (process.env.NODE_ENV === "development") {
       console.log("✅ Suscripción push guardada:", { endpoint: subscription.endpoint, userType })
     }
@@ -41,24 +55,34 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("Error saving push subscription:", error)
-    return NextResponse.json({ message: "Error guardando suscripción" }, { status: 500 })
+    return NextResponse.json(
+      {
+        message: "Error guardando suscripción",
+        error: error instanceof Error ? error.message : "Error desconocido",
+      },
+      { status: 500 },
+    )
   }
 }
 
 export async function DELETE(request: Request) {
   try {
+    console.log("DELETE /api/push-subscriptions - Starting...")
+
     const client = await clientPromise
     const db = client.db("parking")
 
-    const { subscription } = await request.json()
+    const { endpoint } = await request.json()
 
-    if (!subscription || !subscription.endpoint) {
-      return NextResponse.json({ message: "Suscripción inválida" }, { status: 400 })
+    if (!endpoint) {
+      return NextResponse.json({ message: "Endpoint requerido" }, { status: 400 })
     }
 
+    console.log("Deactivating subscription for endpoint:", endpoint)
+
     // Mark subscription as inactive
-    await db.collection("push_subscriptions").updateOne(
-      { endpoint: subscription.endpoint },
+    const result = await db.collection("push_subscriptions").updateOne(
+      { endpoint },
       {
         $set: {
           active: false,
@@ -67,8 +91,10 @@ export async function DELETE(request: Request) {
       },
     )
 
+    console.log("Deactivation result:", { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount })
+
     if (process.env.NODE_ENV === "development") {
-      console.log("✅ Suscripción push desactivada:", subscription.endpoint)
+      console.log("✅ Suscripción push desactivada:", endpoint)
     }
 
     return NextResponse.json({
@@ -77,7 +103,13 @@ export async function DELETE(request: Request) {
     })
   } catch (error) {
     console.error("Error removing push subscription:", error)
-    return NextResponse.json({ message: "Error eliminando suscripción" }, { status: 500 })
+    return NextResponse.json(
+      {
+        message: "Error eliminando suscripción",
+        error: error instanceof Error ? error.message : "Error desconocido",
+      },
+      { status: 500 },
+    )
   }
 }
 
