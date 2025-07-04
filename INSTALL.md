@@ -1,11 +1,121 @@
 # 🚗 Sistema de Estacionamiento - Guía de Instalación
 
+## 📋 Resumen V2 - Estructura y Funcionalidad del Sistema
+
+### 🎯 ¿Qué es este Sistema?
+**Sistema de Gestión de Estacionamiento Inteligente** - Una aplicación web completa que digitaliza y automatiza la operación de estacionamientos, desde el registro de vehículos hasta el procesamiento de pagos.
+
+### 🏗️ Estructura del Sistema
+
+#### **Frontend (Interfaz de Usuario)**
+- **Página Principal** (`/`): Búsqueda de tickets para clientes
+- **Panel de Administración** (`/admin`): Dashboard completo para personal
+- **Página de Ticket** (`/ticket/[code]`): Detalles y proceso de pago
+
+#### **Backend (Lógica del Servidor)**
+- **APIs de Admin** (`/api/admin/*`): 20+ endpoints para gestión administrativa
+- **APIs Públicas** (`/api/*`): Endpoints para clientes (búsqueda, pagos)
+- **Base de Datos MongoDB**: 7 colecciones principales
+
+#### **Componentes Principales**
+- **Admin Dashboard**: 7 pestañas de gestión (Tickets, Registro, Pagos, etc.)
+- **Sistema de Pagos**: Formulario multi-paso para transferencias
+- **Generador QR**: Códigos únicos para cada espacio
+- **Calculadora de Tarifas**: Automática según horario diurno/nocturno
+
+### 🔄 Flujo de Operación
+
+1. **Llegada del Vehículo**
+   - Personal registra vehículo → Asigna ticket → Confirma estacionamiento
+
+2. **Proceso de Pago**
+   - Cliente busca ticket → Ve monto calculado → Realiza pago → Envía comprobante
+
+3. **Validación y Salida**
+   - Personal valida pago → Cliente puede salir → Personal libera espacio
+
+### 💾 Estructura de Base de Datos
+
+\`\`\`
+MongoDB Collections:
+├── company_settings    # Configuración general y tarifas
+├── tickets            # Espacios de estacionamiento (PARK001-PARK100)
+├── cars              # Vehículos registrados
+├── pagos             # Pagos realizados por clientes
+├── staff             # Personal del sistema (admin/operadores)
+├── banks             # Lista de bancos venezolanos
+└── car_history       # Historial completo de eventos
+\`\`\`
+
+### 🎛️ Panel de Administración (7 Pestañas)
+
+1. **Dashboard**: Estadísticas en tiempo real (6 métricas principales)
+2. **Confirmar**: Confirmar estacionamiento de vehículos recién llegados
+3. **Tickets**: Crear y gestionar espacios de estacionamiento
+4. **Registro**: Registrar nuevos vehículos que llegan
+5. **Pagos**: Validar/rechazar pagos pendientes de clientes
+6. **Salidas**: Procesar salida de vehículos con pagos validados
+7. **Config**: Configurar tarifas diurnas/nocturnas y datos bancarios
+8. **Historial**: Búsqueda avanzada en historial completo
+9. **Personal**: Gestión de usuarios del sistema
+
+### 🌙 Sistema de Tarifas Inteligente
+
+- **Tarifa Diurna**: Precio estándar durante el día
+- **Tarifa Nocturna**: Precio diferenciado para horario nocturno
+- **Cálculo Automático**: El sistema determina qué tarifa aplicar según la hora actual
+- **Configuración Flexible**: Horarios personalizables (ej: nocturno 00:00-06:00)
+
+### 💳 Métodos de Pago Soportados
+
+- **Pago Móvil**: Con datos bancarios configurables
+- **Transferencia Bancaria**: Con información de cuenta empresarial
+- **Validación Manual**: Personal revisa y aprueba cada pago
+
+### 📱 Características Técnicas
+
+- **PWA Ready**: Funciona como app móvil
+- **Responsive**: Optimizado para móviles y desktop
+- **Tiempo Real**: Actualizaciones automáticas cada 30 segundos
+- **QR Codes**: Generación y escaneo integrado
+- **Búsqueda Avanzada**: Filtros por placa, nombre, marca, ticket
+- **Paginación**: Manejo eficiente de grandes volúmenes de datos
+
+### 🔔 Sistema de Notificaciones Push (NUEVO)
+- **Notificaciones en Tiempo Real**: Los usuarios reciben notificaciones automáticas sobre el estado de sus pagos
+- **Notificaciones para Administradores**: Alertas cuando llegan nuevos pagos o solicitudes de salida
+- **Soporte Multiplataforma**: Funciona en Android, iOS y escritorio
+- **Tipos de Notificación**:
+  - ✅ Pago validado
+  - ❌ Pago rechazado
+  - 🚗 Vehículo confirmado en estacionamiento
+  - 🚪 Vehículo listo para salir
+  - 💰 Nuevo pago recibido (admin)
+  - 🚪 Solicitud de salida (admin)
+
+### 📱 Progressive Web App (PWA) (NUEVO)
+- **Instalación como App**: Los usuarios pueden instalar la aplicación en sus dispositivos
+- **Funcionamiento Offline**: Funcionalidad básica disponible sin conexión
+- **Acceso Rápido**: Icono en pantalla de inicio como una app nativa
+- **Actualizaciones Automáticas**: El sistema se actualiza automáticamente
+- **Compatibilidad Universal**: Funciona en Android, iOS, Windows, macOS
+
+### 🎯 Casos de Uso Principales
+
+**Estacionamiento Comercial**: Centros comerciales, oficinas, hospitales
+**Estacionamiento Residencial**: Edificios, condominios
+**Eventos**: Conciertos, ferias, eventos deportivos
+**Aeropuertos**: Estacionamientos de corta y larga estadía
+
+---
+
 ## 📋 Requisitos Previos
 
 - **Node.js** 18+ 
 - **MongoDB** (local o MongoDB Atlas)
 - **Cloudinary** (para almacenamiento de imágenes)
 - **Cuenta de Vercel** (para despliegue)
+- **Claves VAPID** (para notificaciones push - se generan automáticamente)
 
 ## 🚀 Instalación Rápida
 
@@ -33,8 +143,15 @@ CLOUDINARY_CLOUD_NAME=tu_cloud_name
 CLOUDINARY_API_KEY=tu_api_key
 CLOUDINARY_API_SECRET=tu_api_secret
 
+# URL base de la aplicación
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+
 # OCR Service (opcional)
 PYTHON_OCR_API_URL=http://localhost:8000
+
+# Notificaciones Push (se generan automáticamente al ejecutar npm run seed)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=tu_clave_publica_vapid
+VAPID_PRIVATE_KEY=tu_clave_privada_vapid
 \`\`\`
 
 ### 4. Inicializar Base de Datos
@@ -77,6 +194,74 @@ sudo systemctl start mongodb
 2. Obtener credenciales del dashboard
 3. Configurar en `.env.local`
 
+## 🔔 Configuración de Notificaciones Push
+
+### Generación Automática de Claves VAPID
+Las claves VAPID necesarias para las notificaciones push se generan automáticamente cuando ejecutas:
+
+\`\`\`bash
+npm run seed
+\`\`\`
+
+Este comando:
+1. Genera un par de claves VAPID únicas
+2. Las guarda en tu archivo `.env.local`
+3. Configura el sistema de notificaciones
+
+### Activación Manual de Notificaciones (si es necesario)
+Si necesitas generar nuevas claves VAPID manualmente:
+
+\`\`\`bash
+# Instalar web-push globalmente
+npm install -g web-push
+
+# Generar claves VAPID
+web-push generate-vapid-keys
+
+# Agregar las claves a tu .env.local
+\`\`\`
+
+### Configuración en Producción
+Para el despliegue en Vercel:
+1. Las claves VAPID se configuran automáticamente
+2. Asegúrate de que `NEXT_PUBLIC_BASE_URL` apunte a tu dominio de producción
+3. Las notificaciones funcionarán automáticamente
+
+## 📱 Configuración PWA (Progressive Web App)
+
+### Características PWA Incluidas
+- ✅ **Manifest.json**: Configuración completa de la app
+- ✅ **Service Worker**: Para funcionalidad offline
+- ✅ **Iconos**: Generados automáticamente en múltiples tamaños
+- ✅ **Instalación Guiada**: Prompt automático para instalar
+- ✅ **Modo Standalone**: Funciona como app nativa
+- ✅ **Actualizaciones**: Sistema de actualización automática
+
+### Instalación de la PWA
+
+#### En Android/Chrome:
+1. Visita la aplicación en Chrome
+2. Aparecerá automáticamente un prompt de instalación
+3. Toca "Instalar" para agregar a pantalla de inicio
+
+#### En iOS/Safari:
+1. Abre la app en Safari
+2. Toca el botón "Compartir" 
+3. Selecciona "Agregar a pantalla de inicio"
+4. Confirma la instalación
+
+#### En Escritorio:
+1. Visita la app en Chrome/Edge
+2. Busca el ícono de instalación en la barra de direcciones
+3. Haz clic para instalar como aplicación de escritorio
+
+### Funcionalidad Offline
+La PWA incluye funcionalidad básica offline:
+- **Página de inicio**: Disponible sin conexión
+- **Búsqueda de tickets**: Cache de búsquedas recientes
+- **Interfaz completa**: UI disponible offline
+- **Sincronización**: Los datos se sincronizan al reconectar
+
 ## 🎯 Funcionalidades Principales
 
 ### 🌙 Sistema de Tarifas Diurnas/Nocturnas
@@ -114,6 +299,30 @@ sudo systemctl start mongodb
 - **Códigos QR**: Generación automática
 - **Estados**: Disponible, ocupado, pagado, finalizado
 - **Seguimiento**: Historial completo de cada espacio
+
+### 🔔 Sistema de Notificaciones Push
+- **Para Usuarios**:
+  - Notificación cuando el pago es validado
+  - Alerta cuando el pago es rechazado con motivo
+  - Confirmación cuando el vehículo es registrado
+  - Aviso cuando el vehículo está listo para salir
+
+- **Para Administradores**:
+  - Notificación inmediata de nuevos pagos
+  - Alerta de solicitudes de salida pendientes
+  - Resumen de actividad del estacionamiento
+
+- **Configuración Flexible**:
+  - Los usuarios pueden activar/desactivar notificaciones
+  - Diferentes tipos de notificación según el rol
+  - Soporte para múltiples dispositivos por usuario
+
+### 📱 Aplicación Web Progresiva (PWA)
+- **Instalación Nativa**: Los usuarios pueden instalar la app como si fuera nativa
+- **Acceso Offline**: Funcionalidad básica disponible sin internet
+- **Actualizaciones Automáticas**: El sistema se actualiza sin intervención del usuario
+- **Rendimiento Optimizado**: Carga rápida y uso eficiente de recursos
+- **Compatibilidad Universal**: Funciona en todos los dispositivos y sistemas operativos
 
 ## 🔐 Credenciales por Defecto
 
@@ -162,11 +371,14 @@ npm run dev
 # Construcción
 npm run build
 
-# Inicializar BD
+# Inicializar BD (incluye generación de claves VAPID)
 npm run seed
 
 # Linting
 npm run lint
+
+# Generar claves VAPID (si es necesario)
+npx web-push generate-vapid-keys
 \`\`\`
 
 ## 📱 Uso del Sistema
@@ -182,6 +394,34 @@ npm run lint
 2. Gestionar vehículos y pagos
 3. Configurar tarifas y métodos de pago
 4. Validar comprobantes de pago
+
+### Activación de Notificaciones:
+
+#### Para Usuarios:
+1. **Primera Visita**: Al acceder por primera vez, aparecerá un prompt para activar notificaciones
+2. **Permitir Notificaciones**: Acepta los permisos cuando el navegador lo solicite
+3. **Confirmación**: Recibirás una notificación de prueba confirmando la activación
+4. **Gestión**: Puedes desactivar las notificaciones desde la configuración del navegador
+
+#### Para Administradores:
+1. **Acceso al Panel**: Las notificaciones se activan automáticamente al hacer login
+2. **Notificaciones en Tiempo Real**: Recibirás alertas de:
+   - Nuevos pagos pendientes de validación
+   - Vehículos listos para salir
+   - Actividad general del estacionamiento
+3. **Múltiples Dispositivos**: Puedes recibir notificaciones en varios dispositivos
+
+### Instalación como PWA:
+
+#### Instalación Automática:
+1. **Prompt Automático**: Después de usar la app, aparecerá un prompt de instalación
+2. **Beneficios Mostrados**: El sistema explica las ventajas de instalar la app
+3. **Un Clic**: Instalación simple con un botón
+
+#### Instalación Manual:
+- **Chrome/Edge**: Busca el ícono de instalación en la barra de direcciones
+- **Safari iOS**: Usar "Compartir" → "Agregar a pantalla de inicio"
+- **Android**: Usar el menú del navegador → "Instalar app"
 
 ## 🔧 Personalización
 
@@ -215,6 +455,31 @@ ping cluster0.xxxxx.mongodb.net
 - Verificar que las rutas API estén correctamente exportadas
 - Revisar que `dynamic = 'force-dynamic'` esté configurado
 
+### Problemas con Notificaciones Push:
+\`\`\`bash
+# Verificar que las claves VAPID estén configuradas
+echo $NEXT_PUBLIC_VAPID_PUBLIC_KEY
+echo $VAPID_PRIVATE_KEY
+
+# Regenerar claves si es necesario
+npm run seed
+\`\`\`
+
+### Problemas con PWA:
+- **No aparece el prompt de instalación**: Verifica que estés usando HTTPS (o localhost)
+- **Service Worker no se registra**: Revisa la consola del navegador para errores
+- **Notificaciones no funcionan**: Confirma que los permisos estén otorgados
+
+### Error de VAPID Keys:
+\`\`\`bash
+# Si las claves VAPID no se generan automáticamente
+npx web-push generate-vapid-keys
+
+# Agregar manualmente al .env.local
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=tu_clave_publica
+VAPID_PRIVATE_KEY=tu_clave_privada
+\`\`\`
+
 ## 📞 Soporte
 
 Para reportar problemas o solicitar funcionalidades:
@@ -232,11 +497,16 @@ El sistema incluye migración automática de configuraciones antiguas:
 
 ## 📈 Próximas Funcionalidades
 
+- [x] Notificaciones push en tiempo real
+- [x] PWA con instalación nativa
+- [x] Funcionamiento offline básico
 - [ ] Notificaciones por email/SMS
 - [ ] Reportes avanzados con gráficos
 - [ ] API para integraciones externas
 - [ ] App móvil nativa
 - [ ] Sistema de reservas
+- [ ] Geolocalización de espacios
+- [ ] Integración con sistemas de pago automático
 
 ---
 
@@ -247,10 +517,14 @@ El sistema de estacionamiento está configurado con:
 - ✅ Panel de administración completo
 - ✅ Múltiples métodos de pago
 - ✅ Base de datos limpia y optimizada
+- ✅ **Notificaciones push en tiempo real**
+- ✅ **PWA instalable en cualquier dispositivo**
+- ✅ **Funcionamiento offline**
+- ✅ **Claves VAPID generadas automáticamente**
+- ✅ **Service Worker configurado**
 - ✅ Listo para producción
 
-**¡Disfruta tu nuevo sistema de estacionamiento inteligente!** 🚗💨
-\`\`\`
+**¡Disfruta tu nuevo sistema de estacionamiento inteligente con notificaciones push y PWA!** 🚗💨📱🔔
 
 # Sistema de Estacionamiento - Aplicación Web Completa
 
