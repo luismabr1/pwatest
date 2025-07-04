@@ -94,23 +94,35 @@ export async function POST(request: NextRequest) {
 
     await db.collection("car_history").updateOne({ ticketAsociado: pago.codigoTicket }, carHistoryUpdate)
 
-    // Send notification to user
+    // Send notification to ticket subscriptions
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type: "payment_validated",
+      const ticketSubscriptions = await db
+        .collection("ticket_subscriptions")
+        .find({
           ticketCode: pago.codigoTicket,
-          userType: "user",
-          data: {
-            amount: pago.montoPagado,
-            plate: car?.placa || "N/A",
+          isActive: true,
+        })
+        .toArray()
+
+      if (ticketSubscriptions.length > 0) {
+        // Send notification using the existing notification API
+        await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        }),
-      })
+          body: JSON.stringify({
+            type: "payment_validated",
+            ticketCode: pago.codigoTicket,
+            userType: "user",
+            data: {
+              amount: pago.montoPagado,
+              plate: car?.placa || "N/A",
+              subscriptions: ticketSubscriptions.map((sub) => sub.subscription),
+            },
+          }),
+        })
+      }
     } catch (notificationError) {
       console.error("Error sending notification:", notificationError)
       // Don't fail the payment validation if notification fails
