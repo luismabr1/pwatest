@@ -4,22 +4,22 @@ import { pushNotificationService } from "@/lib/push-notifications";
 
 export async function POST(request: Request) {
   try {
+    const requestBody = await request.json().catch((err) => {
+      if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
+        console.error("❌ [SEND-NOTIFICATION] Error parsing request body:", err);
+      }
+      throw err;
+    });
+
     if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
       console.log("🔔 [SEND-NOTIFICATION] Recibida solicitud POST");
       console.log("📡 [SEND-NOTIFICATION] Request method:", request.method);
       console.log("📡 [SEND-NOTIFICATION] Request URL:", request.url);
       console.log("📡 [SEND-NOTIFICATION] Request headers:", Object.fromEntries(request.headers.entries()));
-      const requestBody = await request.json().catch((err) => {
-        console.error("❌ [SEND-NOTIFICATION] Error parsing request body:", err);
-        return null;
-      });
       console.log("📦 [SEND-NOTIFICATION] Request body:", requestBody);
     }
 
-    const client = await clientPromise;
-    const db = client.db("parking");
-
-    const { type, ticketCode, userType = "user", data = {} } = await request.json();
+    const { type, ticketCode, userType = "user", data = {} } = requestBody;
 
     if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "production") {
       console.log("🔔 [SEND-NOTIFICATION] Procesando notificación:", {
@@ -45,6 +45,9 @@ export async function POST(request: Request) {
         console.log("📱 [SEND-NOTIFICATION] Usando suscripciones proporcionadas:", subscriptions.length);
       }
     } else {
+      const client = await clientPromise;
+      const db = client.db("parking");
+
       if (userType === "admin") {
         const adminSubs = await db
           .collection("push_subscriptions")
