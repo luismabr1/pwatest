@@ -462,9 +462,7 @@ export async function POST(request: Request) {
 
       await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "admin_payment",
           ticketCode: codigoTicket,

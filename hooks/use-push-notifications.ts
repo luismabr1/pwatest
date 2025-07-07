@@ -87,131 +87,112 @@ export function usePushNotifications() {
     checkSupport()
   }, [])
 
-  const subscribe = useCallback(
-    async (userType: "user" | "admin" = "user", ticketCode: string = "TEST-001") => {
-      if (!state.isSupported) {
-        setState((prev) => ({ ...prev, error: "Notificaciones no soportadas" }))
-        return false
-      }
+const subscribe = useCallback(async (userType: string, ticketCode: string) => {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    setState((prev) => ({ ...prev, isSupported: false }));
+    return false;
+  }
 
-      setState((prev) => ({ ...prev, isLoading: true, error: null }))
+  setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-      try {
-        console.log("Requesting notification permission...")
-        const permission = await Notification.requestPermission()
-        console.log("Permission result:", permission)
-
-        if (permission !== "granted") {
-          throw new Error("Permisos de notificación denegados")
-        }
-
-        console.log("Getting service worker registration...")
-        const registration = await navigator.serviceWorker.ready
-        console.log("Service worker ready:", registration)
-
-        let subscription = await registration.pushManager.getSubscription()
-        console.log("Existing subscription:", subscription)
-
-        if (!subscription) {
-          console.log("Creating new subscription...")
-          const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-          if (!vapidPublicKey) {
-            throw new Error("Clave VAPID pública no configurada. Verifica tu archivo .env.local")
-          }
-          console.log("VAPID key available, subscribing...")
-          subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-          })
-          console.log("New subscription created:", subscription)
-        }
-
-        console.log("Sending subscription to server...")
-        const response = await fetch("/api/push-subscriptions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscription: subscription.toJSON(), userType, ticketCode }),
-        })
-
-        console.log("Server response status:", response.status)
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error("Server error:", errorText)
-          throw new Error(`Error del servidor: ${response.status}`)
-        }
-
-        const result = await response.json()
-        console.log("Server response:", result)
-
-        setState((prev) => ({
-          ...prev,
-          isSubscribed: true,
-          isLoading: false,
-          subscription,
-          error: null,
-        }))
-
-        try {
-          await registration.showNotification("¡Notificaciones Activadas!", {
-            body: "Ahora recibirás actualizaciones sobre tus pagos y vehículo",
-            icon: "/icons/icon-192x192.png", // Updated to existing icon
-            badge: "/icons/icon-72x72.png",
-            tag: "subscription-success",
-            requireInteraction: false,
-          })
-        } catch (notifError) {
-          console.warn("Could not show success notification:", notifError)
-        }
-
-        return true
-      } catch (error) {
-        console.error("Error subscribing to push notifications:", error)
-        const errorMessage = error instanceof Error ? error.message : "Error desconocido al activar notificaciones"
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: errorMessage,
-        }))
-        return false
-      }
-    },
-    [state.isSupported],
-  )
-
-  const unsubscribe = useCallback(async () => {
-    if (!state.subscription) return false
-
-    setState((prev) => ({ ...prev, isLoading: true, error: null }))
-
-    try {
-      console.log("Unsubscribing from push notifications...")
-      await state.subscription.unsubscribe()
-
-      await fetch("/api/push-subscriptions", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: state.subscription.endpoint }),
-      })
-
-      setState((prev) => ({
-        ...prev,
-        isSubscribed: false,
-        isLoading: false,
-        subscription: null,
-        error: null,
-      }))
-
-      return true
-    } catch (error) {
-      console.error("Error unsubscribing from push notifications:", error)
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : "Error al desactivar notificaciones",
-      }))
-      return false
+  try {
+    console.log("Requesting notification permission...");
+    const permission = await Notification.requestPermission();
+    console.log("Permission result:", permission);
+    if (permission !== "granted") {
+      throw new Error("Permiso denegado por el usuario");
     }
-  }, [state.subscription])
+
+    console.log("Getting service worker registration...");
+    const registration = await navigator.serviceWorker.ready;
+    console.log("Service worker ready:", registration);
+
+    console.log("Checking existing subscription...");
+    let subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      console.log("Existing subscription found, unsubscribing...");
+      await subscription.unsubscribe();
+    }
+
+    console.log("Creating new subscription...");
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) {
+      throw new Error("VAPID key not configured");
+    }
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    });
+    console.log("New subscription created:", subscription);
+
+    console.log("Sending subscription to server...");
+    const response = await fetch("/api/push-subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription, userType, ticketCode }),
+    });
+    console.log("Server response status:", response.status);
+    const result = await response.json();
+    console.log("Server response:", result);
+
+    setState((prev) => ({
+      ...prev,
+      isSubscribed: true,
+      isLoading: false,
+      subscription,
+      error: null,
+    }));
+    return true;
+  } catch (error) {
+    console.error("Error subscribing to push notifications:", error);
+    setState((prev) => ({
+      ...prev,
+      isLoading: false,
+      error: error instanceof Error ? error.message : "Error al activar notificaciones",
+    }));
+    return false;
+  }
+}, []);
+
+const unsubscribe = useCallback(async () => {
+  if (!state.subscription) return false;
+
+  setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+  try {
+    console.log("Unsubscribing from push notifications...");
+    console.log("Subscription endpoint:", state.subscription.endpoint);
+    await state.subscription.unsubscribe();
+    console.log("Subscription unsubscribed from client");
+
+    const response = await fetch("/api/push-subscriptions", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: state.subscription.endpoint }),
+    });
+    console.log("Server response status:", response.status);
+    const result = await response.json();
+    console.log("Server response:", result);
+
+    setState((prev) => ({
+      ...prev,
+      isSubscribed: false,
+      isLoading: false,
+      subscription: null,
+      error: null,
+    }));
+
+    return true;
+  } catch (error) {
+    console.error("Error unsubscribing from push notifications:", error);
+    setState((prev) => ({
+      ...prev,
+      isLoading: false,
+      error: error instanceof Error ? error.message : "Error al desactivar notificaciones",
+    }));
+    return false;
+  }
+}, [state.subscription]);
 
   return {
     ...state,

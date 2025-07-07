@@ -136,101 +136,44 @@ export async function POST(request: NextRequest) {
     // Send notification to ticket subscriptions
     try {
       if (process.env.NODE_ENV === "development") {
-        console.log("🔔 [VALIDATE-PAYMENT] Buscando suscripciones para ticket:", pago.codigoTicket);
+        console.log("🔔 [VALIDATE-PAYMENT] Enviando notificación para ticket:", pago.codigoTicket);
       }
 
-      const ticketSubscriptions = await db
-        .collection("ticket_subscriptions")
-        .find({
-          ticketCode: pago.codigoTicket,
-          isActive: true,
-        })
-        .toArray();
-
-      if (process.env.NODE_ENV === "development") {
-        console.log("📊 [VALIDATE-PAYMENT] Suscripciones encontradas:", ticketSubscriptions.length);
-        ticketSubscriptions.forEach((sub, index) => {
-          console.log(`📱 [VALIDATE-PAYMENT] Suscripción ${index + 1}:`, {
-            endpoint: sub.subscription?.endpoint?.substring(0, 50) + "...",
-            deviceInfo: sub.deviceInfo?.userAgent?.substring(0, 50) + "...",
-            timestamp: sub.deviceInfo?.timestamp,
-          });
-        });
-      }
-
-      if (ticketSubscriptions.length > 0) {
-        if (process.env.NODE_ENV === "development") {
-          console.log(
-            "📤 [VALIDATE-PAYMENT] Preparando solicitud de notificación a",
-            ticketSubscriptions.length,
-            "dispositivos",
-          );
-          console.log("🌐 [VALIDATE-PAYMENT] URL de notificación:", `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`);
-          console.log("📦 [VALIDATE-PAYMENT] Cuerpo de la solicitud:", {
+      const notificationResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
             type: "payment_validated",
             ticketCode: pago.codigoTicket,
             userType: "user",
             data: {
               amount: pago.montoPagado,
               plate: car?.placa || "N/A",
-              subscriptions: ticketSubscriptions.map((sub) => sub.subscription),
+              reason: "Pago validado exitosamente",
             },
-          });
-        }
+          }),
+        },
+      );
 
-        const notificationResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: "payment_validated",
-              ticketCode: pago.codigoTicket,
-              userType: "user",
-              data: {
-                amount: pago.montoPagado,
-                plate: car?.placa || "N/A",
-                subscriptions: ticketSubscriptions.map((sub) => sub.subscription),
-              },
-            }),
-          },
-        );
+      if (process.env.NODE_ENV === "development") {
+        console.log("📡 [VALIDATE-PAYMENT] Respuesta de notificación:", {
+          status: notificationResponse.status,
+          ok: notificationResponse.ok,
+        });
+      }
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("📡 [VALIDATE-PAYMENT] Respuesta inicial del fetch:", {
-            status: notificationResponse.status,
-            ok: notificationResponse.ok,
-          });
-        }
-
-        if (!notificationResponse.ok) {
-          const errorText = await notificationResponse.text();
-          console.error(
-            "❌ [VALIDATE-PAYMENT] Error en notificación:",
-            notificationResponse.status,
-            errorText,
-          );
-          throw new Error(`Notification failed with status ${notificationResponse.status}: ${errorText}`);
-        }
-
-        if (process.env.NODE_ENV === "development") {
-          const notificationResult = await notificationResponse.text();
-          console.log("📬 [VALIDATE-PAYMENT] Respuesta de notificación:", {
-            status: notificationResponse.status,
-            ok: notificationResponse.ok,
-            result: notificationResult,
-          });
-        }
-      } else {
-        if (process.env.NODE_ENV === "development") {
-          console.log("⚠️ [VALIDATE-PAYMENT] No hay suscripciones activas para este ticket");
-        }
+      if (!notificationResponse.ok) {
+        const errorText = await notificationResponse.text();
+        console.error("❌ [VALIDATE-PAYMENT] Error en notificación:", errorText);
+        // Log but don't fail the payment validation
       }
     } catch (notificationError) {
       console.error("❌ [VALIDATE-PAYMENT] Error sending notification:", notificationError);
-      // Log the error but don't fail the payment validation
+      // Log but don't fail the payment validation
     }
 
     if (process.env.NODE_ENV === "development") {
