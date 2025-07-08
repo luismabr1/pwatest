@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Clock, Car, DollarSign, Calendar, Bell, BellOff } from "lucide-react"
-import { PaymentForm } from "./payment-form"
+import  PaymentForm  from "./payment-form"
 import { useTicketNotifications } from "@/hooks/use-ticket-notifications"
 import { toast } from "sonner"
 
@@ -65,6 +65,36 @@ export function TicketDetails({ ticketCode }: TicketDetailsProps) {
       fetchTicketDetails()
     }
   }, [ticketCode])
+
+  // Auto-enable notifications when ticket is loaded
+  useEffect(() => {
+    const autoEnableNotifications = async () => {
+      if (isSupported && !isRegistered && !isLoading && ticket) {
+        console.log("🔔 [TICKET-DETAILS] Auto-habilitando notificaciones para ticket:", ticketCode)
+
+        try {
+          const permission = await requestPermission()
+          if (permission === "granted") {
+            const registered = await registerForTicket()
+            if (registered) {
+              console.log("✅ [TICKET-DETAILS] Notificaciones habilitadas automáticamente")
+              toast.success("🔔 Notificaciones activadas automáticamente")
+            } else {
+              console.log("❌ [TICKET-DETAILS] No se pudieron habilitar las notificaciones automáticamente")
+            }
+          }
+        } catch (error) {
+          console.error("❌ [TICKET-DETAILS] Error habilitando notificaciones:", error)
+        }
+      }
+    }
+
+    // Delay to ensure component is fully mounted and ticket is loaded
+    if (ticket) {
+      const timer = setTimeout(autoEnableNotifications, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [isSupported, isRegistered, isLoading, requestPermission, registerForTicket, ticketCode, ticket])
 
   const handleEnableNotifications = async () => {
     try {

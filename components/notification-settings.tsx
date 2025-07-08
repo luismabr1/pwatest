@@ -28,7 +28,8 @@ export default function NotificationSettings({
     if (isSubscribed) {
       await unsubscribe()
     } else {
-      await subscribe(userType, ticketCode)
+      // Para tests, siempre usar TEST-001
+      await subscribe(userType, "TEST-001")
     }
   }
 
@@ -37,17 +38,19 @@ export default function NotificationSettings({
 
     setIsTestingNotification(true)
     try {
-      console.log("🧪 [NOTIFICATION-SETTINGS] Enviando notificación de prueba:", { userType, ticketCode })
+      console.log("🧪 [NOTIFICATION-SETTINGS] Enviando notificación de prueba:", { userType, ticketCode: "TEST-001" })
 
       const response = await fetch("/api/send-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "test",
-          userType,
+          userType: userType,
+          ticketCode: "TEST-001", // Siempre usar TEST-001 para pruebas
           data: {
             message: "Notificación de prueba",
             timestamp: new Date().toISOString(),
+            testMode: true,
           },
         }),
       })
@@ -58,8 +61,12 @@ export default function NotificationSettings({
         const result = await response.json()
         console.log("🧪 [NOTIFICATION-SETTINGS] Resultado:", result)
 
-        setTestNotificationSent(true)
-        setTimeout(() => setTestNotificationSent(false), 5000)
+        if (result.sent > 0) {
+          setTestNotificationSent(true)
+          setTimeout(() => setTestNotificationSent(false), 5000)
+        } else {
+          console.warn("⚠️ [NOTIFICATION-SETTINGS] No se enviaron notificaciones:", result.message)
+        }
       } else {
         const errorText = await response.text()
         console.error("🧪 [NOTIFICATION-SETTINGS] Error en prueba:", errorText)
@@ -76,7 +83,7 @@ export default function NotificationSettings({
       await unsubscribe()
       // Wait a bit before resubscribing
       setTimeout(async () => {
-        await subscribe(userType, ticketCode)
+        await subscribe(userType, "TEST-001")
       }, 1000)
     }
   }
@@ -166,7 +173,7 @@ export default function NotificationSettings({
                   ? "Recibe alertas de nuevos pagos y solicitudes de salida"
                   : "Recibe actualizaciones sobre tus pagos y vehículo"}
               </p>
-              {ticketCode && <p className="text-xs text-gray-400 mt-1">Ticket: {ticketCode}</p>}
+              <p className="text-xs text-gray-400 mt-1">Ticket de prueba: TEST-001</p>
             </div>
             <Button
               onClick={handleToggleNotifications}

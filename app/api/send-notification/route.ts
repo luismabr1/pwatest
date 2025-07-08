@@ -10,101 +10,146 @@ export async function POST(request: Request) {
     const client = await clientPromise
     const db = client.db("parking")
 
-    const { type, ticketCode, userType, data } = await request.json()
+    const body = await request.json()
+    console.log("📦 [SEND-NOTIFICATION] Payload recibido:", JSON.stringify(body, null, 2))
 
-    console.log("📦 [SEND-NOTIFICATION] Datos recibidos:")
+    const { type, ticketCode, userType, data } = body
+
+    if (!type) {
+      console.error("❌ [SEND-NOTIFICATION] Tipo de notificación faltante")
+      return NextResponse.json({ error: "Tipo de notificación requerido" }, { status: 400 })
+    }
+
+    console.log("🔍 [SEND-NOTIFICATION] Parámetros:")
     console.log("   Tipo:", type)
     console.log("   Ticket Code:", ticketCode)
     console.log("   User Type:", userType)
     console.log("   Data:", data)
 
-    if (!type || !ticketCode || !userType) {
-      console.error("❌ [SEND-NOTIFICATION] ERROR: Datos incompletos")
-      console.error("   Type:", !!type)
-      console.error("   TicketCode:", !!ticketCode)
-      console.error("   UserType:", !!userType)
-      return NextResponse.json({ message: "Datos incompletos" }, { status: 400 })
+    let subscriptions = []
+    let query = {}
+
+    // Construir query para buscar suscripciones
+    if (type === "test") {
+      // Para tests, usar siempre TEST-001 independientemente del userType
+      query = {
+        ticketCode: "TEST-001",
+        isActive: true,
+      }
+      console.log("🧪 [SEND-NOTIFICATION] Modo TEST - Buscando suscripciones para TEST-001")
+    } else if (userType === "admin") {
+      // Para admins, buscar suscripciones admin (pueden ser de cualquier ticket)
+      query = {
+        userType: "admin",
+        isActive: true,
+      }
+      console.log("👨‍💼 [SEND-NOTIFICATION] Buscando suscripciones de ADMIN")
+    } else if (userType === "user" && ticketCode) {
+      // Para usuarios, buscar suscripciones específicas del ticket
+      query = {
+        ticketCode: ticketCode,
+        userType: "user",
+        isActive: true,
+      }
+      console.log("👤 [SEND-NOTIFICATION] Buscando suscripciones de USER para ticket:", ticketCode)
+    } else {
+      console.error("❌ [SEND-NOTIFICATION] Parámetros insuficientes para determinar suscripciones")
+      return NextResponse.json({ error: "Parámetros insuficientes" }, { status: 400 })
     }
 
-    // Build search criteria
-    const searchCriteria: any = {
-      isActive: true,
-      userType: userType,
-    }
+    console.log("🔍 [SEND-NOTIFICATION] Query de búsqueda:", JSON.stringify(query, null, 2))
 
-    // For specific ticket notifications, look for that ticket
-    if (ticketCode !== "ALL") {
-      searchCriteria.ticketCode = ticketCode
-    }
+    // Buscar suscripciones
+    const subscriptionDocs = await db.collection("ticket_subscriptions").find(query).toArray()
 
-    console.log("🔍 [SEND-NOTIFICATION] Criterios de búsqueda:")
-    console.log("   IsActive:", searchCriteria.isActive)
-    console.log("   UserType:", searchCriteria.userType)
-    console.log("   TicketCode:", searchCriteria.ticketCode || "ALL")
+    console.log("📊 [SEND-NOTIFICATION] Resultados de búsqueda:")
+    console.log("   Total encontradas:", subscriptionDocs.length)
 
-    // Find active subscriptions
-    const subscriptions = await db.collection("ticket_subscriptions").find(searchCriteria).toArray()
+    if (subscriptionDocs.length === 0) {
+      console.log("⚠️ [SEND-NOTIFICATION] No se encontraron suscripciones activas")
+      console.log("🔍 [SEND-NOTIFICATION] Verificando todas las suscripciones en la base de datos...")
 
-    console.log("📊 [SEND-NOTIFICATION] Suscripciones encontradas:")
-    console.log("   Total:", subscriptions.length)
-
-    if (subscriptions.length === 0) {
-      console.log("⚠️ [SEND-NOTIFICATION] No hay suscripciones activas para:")
-      console.log("   UserType:", userType)
-      console.log("   TicketCode:", ticketCode)
-
-      // Let's check what subscriptions exist in the database
-      const allSubscriptions = await db.collection("ticket_subscriptions").find({}).toArray()
-      console.log("🔍 [SEND-NOTIFICATION] Todas las suscripciones en BD:")
-      console.log("   Total en BD:", allSubscriptions.length)
-
-      allSubscriptions.forEach((sub, index) => {
-        console.log(
-          `   ${index + 1}. UserType: ${sub.userType}, TicketCode: ${sub.ticketCode}, IsActive: ${sub.isActive}`,
-        )
+      // Debug: mostrar todas las suscripciones
+      const allSubs = await db.collection("ticket_subscriptions").find({}).toArray()
+      console.log("📋 [SEND-NOTIFICATION] Todas las suscripciones en BD:")
+      allSubs.forEach((sub, index) => {
+        console.log(`   ${index + 1}. Ticket: ${sub.ticketCode}, UserType: ${sub.userType}, Active: ${sub.isActive}`)
       })
 
       return NextResponse.json({
         message: "No hay suscripciones activas",
         sent: 0,
         total: 0,
+        query: query,
         debug: {
-          searchCriteria,
-          totalInDB: allSubscriptions.length,
-          activeInDB: allSubscriptions.filter((s) => s.isActive).length,
+          totalSubscriptionsInDB: allSubs.length,
+          subscriptionsFound: subscriptionDocs.length,
         },
       })
     }
 
-    console.log("📋 [SEND-NOTIFICATION] Detalles de suscripciones encontradas:")
-    subscriptions.forEach((sub, index) => {
-      console.log(`   ${index + 1}. UserType: ${sub.userType}, TicketCode: ${sub.ticketCode}`)
-      console.log(`      Endpoint: ${sub.subscription.endpoint.substring(0, 50)}...`)
-      console.log(`      Created: ${sub.createdAt}`)
-      console.log(`      Stage: ${sub.lifecycle?.stage || "N/A"}`)
+    // Extraer suscripciones push
+    subscriptions = subscriptionDocs.map((doc) => doc.subscription).filter((sub) => sub && sub.endpoint && sub.keys)
+
+    console.log("✅ [SEND-NOTIFICATION] Suscripciones válidas encontradas:", subscriptions.length)
+
+    subscriptionDocs.forEach((doc, index) => {
+      console.log(`   ${index + 1}. Ticket: ${doc.ticketCode}, UserType: ${doc.userType}`)
+      console.log(`      Endpoint: ${doc.subscription?.endpoint?.substring(0, 50)}...`)
     })
 
-    // Create notification payload based on type
+    if (subscriptions.length === 0) {
+      console.log("❌ [SEND-NOTIFICATION] No hay suscripciones válidas (sin endpoint o keys)")
+      return NextResponse.json({
+        message: "No hay suscripciones válidas",
+        sent: 0,
+        total: subscriptionDocs.length,
+      })
+    }
+
+    // Crear payload de notificación según el tipo
     let notificationPayload
 
-    console.log("🏭 [SEND-NOTIFICATION] Creando payload de notificación para tipo:", type)
+    console.log("🎨 [SEND-NOTIFICATION] Creando payload de notificación para tipo:", type)
 
     switch (type) {
+      case "test":
+        notificationPayload = {
+          title: "🧪 Notificación de Prueba",
+          body: `Esta es una notificación de prueba enviada a las ${new Date().toLocaleTimeString("es-ES")}`,
+          icon: "/icons/icon-192x192.png",
+          badge: "/icons/icon-72x72.png",
+          tag: `test-${Date.now()}`,
+          data: { type: "test", timestamp: new Date().toISOString(), ...data },
+          requireInteraction: true,
+          actions: [
+            {
+              action: "close",
+              title: "Cerrar",
+            },
+          ],
+        }
+        break
+
       case "payment_validated":
         notificationPayload = pushNotificationService.createPaymentValidatedNotification(ticketCode, data.amount || 0)
         break
+
       case "payment_rejected":
         notificationPayload = pushNotificationService.createPaymentRejectedNotification(
           ticketCode,
           data.reason || "Motivo no especificado",
         )
         break
+
       case "vehicle_parked":
         notificationPayload = pushNotificationService.createVehicleParkedNotification(ticketCode, data.plate || "N/A")
         break
+
       case "vehicle_exit":
         notificationPayload = pushNotificationService.createVehicleExitNotification(ticketCode, data.plate || "N/A")
         break
+
       case "admin_payment":
         notificationPayload = pushNotificationService.createAdminPaymentNotification(
           ticketCode,
@@ -112,65 +157,68 @@ export async function POST(request: Request) {
           data.plate || "N/A",
         )
         break
+
       case "admin_exit_request":
         notificationPayload = pushNotificationService.createAdminExitRequestNotification(
           ticketCode,
           data.plate || "N/A",
         )
         break
+
       default:
         console.error("❌ [SEND-NOTIFICATION] Tipo de notificación no reconocido:", type)
-        return NextResponse.json({ message: "Tipo de notificación no válido" }, { status: 400 })
+        return NextResponse.json({ error: "Tipo de notificación no válido" }, { status: 400 })
     }
 
-    console.log("✅ [SEND-NOTIFICATION] Payload creado:")
+    console.log("📝 [SEND-NOTIFICATION] Payload creado:")
     console.log("   Título:", notificationPayload.title)
     console.log("   Cuerpo:", notificationPayload.body)
     console.log("   Tag:", notificationPayload.tag)
 
-    // Extract push subscriptions
-    const pushSubscriptions = subscriptions.map((sub) => sub.subscription)
+    // Enviar notificaciones
+    console.log("📤 [SEND-NOTIFICATION] Enviando notificaciones...")
+    const sentCount = await pushNotificationService.sendToMultipleSubscriptions(subscriptions, notificationPayload)
 
-    console.log("📤 [SEND-NOTIFICATION] Iniciando envío a", pushSubscriptions.length, "suscripciones...")
+    console.log("📊 [SEND-NOTIFICATION] Resumen final:")
+    console.log("   Suscripciones encontradas:", subscriptionDocs.length)
+    console.log("   Suscripciones válidas:", subscriptions.length)
+    console.log("   Notificaciones enviadas:", sentCount)
+    console.log("   Tasa de éxito:", ((sentCount / subscriptions.length) * 100).toFixed(1) + "%")
 
-    // Send notifications
-    const sentCount = await pushNotificationService.sendToMultipleSubscriptions(pushSubscriptions, notificationPayload)
-
-    console.log("📊 [SEND-NOTIFICATION] Resultado del envío:")
-    console.log("   Enviadas exitosamente:", sentCount)
-    console.log("   Total intentos:", pushSubscriptions.length)
-    console.log("   Tasa de éxito:", ((sentCount / pushSubscriptions.length) * 100).toFixed(1) + "%")
-
-    // Update last used timestamp for successful subscriptions
+    // Actualizar lastUsed para las suscripciones utilizadas
     if (sentCount > 0) {
-      console.log("🔄 [SEND-NOTIFICATION] Actualizando timestamp de uso...")
-      const updateResult = await db.collection("ticket_subscriptions").updateMany(searchCriteria, {
-        $set: {
-          lastUsed: new Date(),
-          "lifecycle.updatedAt": new Date(),
+      const subscriptionIds = subscriptionDocs.map((doc) => doc._id)
+      await db.collection("ticket_subscriptions").updateMany(
+        { _id: { $in: subscriptionIds } },
+        {
+          $set: {
+            lastUsed: new Date(),
+            "lifecycle.updatedAt": new Date(),
+          },
         },
-      })
-      console.log("✅ [SEND-NOTIFICATION] Timestamps actualizados:", updateResult.modifiedCount)
+      )
+      console.log("✅ [SEND-NOTIFICATION] Timestamps de suscripciones actualizados")
     }
 
     console.log("✅ [SEND-NOTIFICATION] ===== ENVÍO COMPLETADO =====")
 
     return NextResponse.json({
-      message: sentCount > 0 ? "Notificaciones enviadas exitosamente" : "No se pudieron enviar notificaciones",
+      message: `Notificaciones enviadas: ${sentCount}/${subscriptions.length}`,
       sent: sentCount,
-      total: pushSubscriptions.length,
+      total: subscriptions.length,
       type: type,
       ticketCode: ticketCode,
       userType: userType,
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("❌ [SEND-NOTIFICATION] ===== ERROR CRÍTICO =====")
     console.error("   Error:", error.message)
     console.error("   Stack:", error.stack)
+
     return NextResponse.json(
       {
-        message: "Error interno del servidor",
-        error: error.message,
+        error: "Error interno del servidor",
+        message: error.message,
       },
       { status: 500 },
     )
