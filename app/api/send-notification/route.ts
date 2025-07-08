@@ -68,9 +68,31 @@ export async function POST(request: Request) {
     console.log("📊 [SEND-NOTIFICATION] Resultados de búsqueda:")
     console.log("   Total encontradas:", subscriptionDocs.length)
 
+    // Debug detallado de las suscripciones encontradas
+    subscriptionDocs.forEach((doc, index) => {
+      console.log(`🔍 [SEND-NOTIFICATION] Suscripción ${index + 1}:`)
+      console.log(`   Ticket: ${doc.ticketCode}`)
+      console.log(`   UserType: ${doc.userType}`)
+      console.log(`   Active: ${doc.isActive}`)
+      console.log(`   Virtual: ${doc.isVirtual}`)
+      console.log(`   Placeholder: ${doc.isPlaceholder}`)
+      console.log(`   Endpoint: ${doc.subscription?.endpoint?.substring(0, 50)}...`)
+    })
+
     if (subscriptionDocs.length === 0) {
       console.log("⚠️ [SEND-NOTIFICATION] No se encontraron suscripciones activas")
       console.log("🔍 [SEND-NOTIFICATION] Verificando todas las suscripciones en la base de datos...")
+
+      // Debug: mostrar todas las suscripciones para el ticket específico
+      if (ticketCode) {
+        const ticketSubs = await db.collection("ticket_subscriptions").find({ ticketCode }).toArray()
+        console.log(`📋 [SEND-NOTIFICATION] Suscripciones para ticket ${ticketCode}:`)
+        ticketSubs.forEach((sub, index) => {
+          console.log(
+            `   ${index + 1}. UserType: ${sub.userType}, Active: ${sub.isActive}, Virtual: ${sub.isVirtual}, Placeholder: ${sub.isPlaceholder}`,
+          )
+        })
+      }
 
       // Debug: mostrar todas las suscripciones
       const allSubs = await db.collection("ticket_subscriptions").find({}).toArray()
@@ -91,16 +113,18 @@ export async function POST(request: Request) {
       })
     }
 
-    // Extraer suscripciones push - filtrar virtuales/placeholder para notificaciones reales
+    // Extraer suscripciones push - INCLUIR suscripciones virtuales activas
     if (type === "test") {
       // Para tests, incluir todas las suscripciones
       subscriptions = subscriptionDocs.map((doc) => doc.subscription).filter((sub) => sub && sub.endpoint && sub.keys)
+      console.log("🧪 [SEND-NOTIFICATION] Modo TEST - Incluyendo todas las suscripciones")
     } else {
-      // Para notificaciones reales, incluir suscripciones virtuales activas pero excluir placeholder
+      // Para notificaciones reales, incluir suscripciones reales Y virtuales activas, excluir solo placeholder
       subscriptions = subscriptionDocs
         .filter((doc) => {
-          // Incluir suscripciones reales
+          // Incluir suscripciones reales (no virtuales, no placeholder)
           if (!doc.isVirtual && !doc.isPlaceholder) {
+            console.log(`✅ [SEND-NOTIFICATION] Incluyendo suscripción real para ${doc.userType}`)
             return true
           }
           // Incluir suscripciones virtuales activas (para admin)
@@ -113,6 +137,7 @@ export async function POST(request: Request) {
             console.log(`❌ [SEND-NOTIFICATION] Excluyendo suscripción placeholder para ${doc.userType}`)
             return false
           }
+          console.log(`❌ [SEND-NOTIFICATION] Excluyendo suscripción inactiva para ${doc.userType}`)
           return false
         })
         .map((doc) => doc.subscription)
@@ -121,17 +146,10 @@ export async function POST(request: Request) {
 
     console.log("✅ [SEND-NOTIFICATION] Suscripciones válidas encontradas:", subscriptions.length)
 
-    subscriptionDocs.forEach((doc, index) => {
-      console.log(`   ${index + 1}. Ticket: ${doc.ticketCode}, UserType: ${doc.userType}`)
-      console.log(`      Endpoint: ${doc.subscription?.endpoint?.substring(0, 50)}...`)
-      if (doc.isVirtual) console.log(`      [VIRTUAL]`)
-      if (doc.isPlaceholder) console.log(`      [PLACEHOLDER]`)
-    })
-
     if (subscriptions.length === 0 && type !== "test") {
-      console.log("❌ [SEND-NOTIFICATION] No hay suscripciones reales para enviar")
+      console.log("❌ [SEND-NOTIFICATION] No hay suscripciones válidas para enviar")
       return NextResponse.json({
-        message: "No hay suscripciones reales válidas",
+        message: "No hay suscripciones válidas",
         sent: 0,
         total: subscriptionDocs.length,
       })

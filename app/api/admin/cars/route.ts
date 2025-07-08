@@ -323,7 +323,6 @@ async function handleCarRequest(request, method) {
           )
         })
 
-        // ELIMINADO: Ya no enviamos notificación en el registro
         console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIONES COMPLETADA =====")
       } catch (subscriptionError) {
         console.error("❌ [CARS-API] Error creating subscriptions:", subscriptionError)
