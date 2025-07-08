@@ -254,6 +254,32 @@ export async function POST(request: Request) {
       console.log("🔄 Ticket reseteado - Documentos modificados:", ticketResetResult.modifiedCount)
     }
 
+    // 🔔 DEACTIVATE ALL SUBSCRIPTIONS FOR THIS TICKET
+    try {
+      if (process.env.NODE_ENV === "development") {
+        console.log("🔔 [VEHICLE-EXIT] Desactivando suscripciones para ticket:", ticketCode)
+      }
+
+      const subscriptionUpdateResult = await db.collection("ticket_subscriptions").updateMany(
+        { ticketCode: ticketCode, isActive: true },
+        {
+          $set: {
+            isActive: false,
+            expiresAt: now,
+            "lifecycle.stage": "expired",
+            "lifecycle.updatedAt": now,
+          },
+        },
+      )
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("✅ [VEHICLE-EXIT] Suscripciones desactivadas:", subscriptionUpdateResult.modifiedCount)
+      }
+    } catch (subscriptionError) {
+      console.error("❌ [VEHICLE-EXIT] Error desactivando suscripciones:", subscriptionError)
+      // Don't fail the exit if subscription cleanup fails
+    }
+
     // Send final notifications to both user and admin about vehicle delivery
     try {
       if (process.env.NODE_ENV === "development") {

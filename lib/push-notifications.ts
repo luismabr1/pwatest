@@ -207,16 +207,16 @@ export class PushNotificationService {
   createVehicleParkedNotification(ticketCode: string, plate: string): NotificationPayload {
     return {
       title: "🚗 Vehículo Estacionado",
-      body: `Tu vehículo ${plate} ha sido estacionado exitosamente. Ticket: ${ticketCode}`,
+      body: `El vehículo ${plate} ha sido estacionado exitosamente. Ticket: ${ticketCode}`,
       icon: "/icons/icon-192x192.png",
       badge: "/icons/icon-72x72.png",
       tag: `vehicle-parked-${ticketCode}`,
       data: { ticketCode, type: "vehicle_parked", plate },
-      url: `/ticket/${ticketCode}`,
+      url: `/admin/dashboard`,
       actions: [
         {
           action: "view",
-          title: "Ver Ticket",
+          title: "Ver Dashboard",
         },
       ],
     }
@@ -237,6 +237,29 @@ export class PushNotificationService {
           action: "directions",
           title: "Ver Ubicación",
         },
+        {
+          action: "close",
+          title: "Cerrar",
+        },
+      ],
+    }
+  }
+
+  createVehicleDeliveredNotification(
+    ticketCode: string,
+    plate: string,
+    duration: number,
+    amount: number,
+  ): NotificationPayload {
+    return {
+      title: "🎉 Vehículo Entregado",
+      body: `Tu vehículo ${plate} ha sido entregado exitosamente. Duración: ${duration} min. Total: Bs. ${amount.toFixed(2)}`,
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-72x72.png",
+      tag: `vehicle-delivered-${ticketCode}`,
+      data: { ticketCode, type: "vehicle_delivered", plate, duration, amount },
+      requireInteraction: false,
+      actions: [
         {
           action: "close",
           title: "Cerrar",
@@ -286,6 +309,25 @@ export class PushNotificationService {
         {
           action: "view",
           title: "Ver Detalles",
+        },
+      ],
+    }
+  }
+
+  // NEW: Add method for vehicle registered notification
+  createVehicleRegisteredNotification(ticketCode: string, plate: string): NotificationPayload {
+    return {
+      title: "📝 Vehículo Registrado",
+      body: `Vehículo ${plate} registrado en el sistema. Ticket: ${ticketCode}`,
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-72x72.png",
+      tag: `vehicle-registered-${ticketCode}`,
+      data: { ticketCode, type: "vehicle_registered", plate },
+      url: `/admin/dashboard`,
+      actions: [
+        {
+          action: "view",
+          title: "Ver Dashboard",
         },
       ],
     }

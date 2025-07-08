@@ -43,6 +43,9 @@ export async function POST(request: Request) {
         userType: "admin",
         isActive: true,
       }
+      if (ticketCode) {
+        query.ticketCode = ticketCode
+      }
       console.log("👨‍💼 [SEND-NOTIFICATION] Buscando suscripciones de ADMIN")
     } else if (userType === "user" && ticketCode) {
       // Para usuarios, buscar suscripciones específicas del ticket
@@ -88,20 +91,47 @@ export async function POST(request: Request) {
       })
     }
 
-    // Extraer suscripciones push
-    subscriptions = subscriptionDocs.map((doc) => doc.subscription).filter((sub) => sub && sub.endpoint && sub.keys)
+    // Extraer suscripciones push - filtrar virtuales/placeholder para notificaciones reales
+    if (type === "test") {
+      // Para tests, incluir todas las suscripciones
+      subscriptions = subscriptionDocs.map((doc) => doc.subscription).filter((sub) => sub && sub.endpoint && sub.keys)
+    } else {
+      // Para notificaciones reales, incluir suscripciones virtuales activas pero excluir placeholder
+      subscriptions = subscriptionDocs
+        .filter((doc) => {
+          // Incluir suscripciones reales
+          if (!doc.isVirtual && !doc.isPlaceholder) {
+            return true
+          }
+          // Incluir suscripciones virtuales activas (para admin)
+          if (doc.isVirtual && doc.isActive) {
+            console.log(`✅ [SEND-NOTIFICATION] Incluyendo suscripción virtual activa para ${doc.userType}`)
+            return true
+          }
+          // Excluir placeholder
+          if (doc.isPlaceholder) {
+            console.log(`❌ [SEND-NOTIFICATION] Excluyendo suscripción placeholder para ${doc.userType}`)
+            return false
+          }
+          return false
+        })
+        .map((doc) => doc.subscription)
+        .filter((sub) => sub && sub.endpoint && sub.keys)
+    }
 
     console.log("✅ [SEND-NOTIFICATION] Suscripciones válidas encontradas:", subscriptions.length)
 
     subscriptionDocs.forEach((doc, index) => {
       console.log(`   ${index + 1}. Ticket: ${doc.ticketCode}, UserType: ${doc.userType}`)
       console.log(`      Endpoint: ${doc.subscription?.endpoint?.substring(0, 50)}...`)
+      if (doc.isVirtual) console.log(`      [VIRTUAL]`)
+      if (doc.isPlaceholder) console.log(`      [PLACEHOLDER]`)
     })
 
-    if (subscriptions.length === 0) {
-      console.log("❌ [SEND-NOTIFICATION] No hay suscripciones válidas (sin endpoint o keys)")
+    if (subscriptions.length === 0 && type !== "test") {
+      console.log("❌ [SEND-NOTIFICATION] No hay suscripciones reales para enviar")
       return NextResponse.json({
-        message: "No hay suscripciones válidas",
+        message: "No hay suscripciones reales válidas",
         sent: 0,
         total: subscriptionDocs.length,
       })
@@ -129,6 +159,13 @@ export async function POST(request: Request) {
             },
           ],
         }
+        break
+
+      case "vehicle_registered":
+        notificationPayload = pushNotificationService.createVehicleRegisteredNotification(
+          ticketCode,
+          data.plate || "N/A",
+        )
         break
 
       case "payment_validated":
@@ -183,7 +220,10 @@ export async function POST(request: Request) {
     console.log("   Suscripciones encontradas:", subscriptionDocs.length)
     console.log("   Suscripciones válidas:", subscriptions.length)
     console.log("   Notificaciones enviadas:", sentCount)
-    console.log("   Tasa de éxito:", ((sentCount / subscriptions.length) * 100).toFixed(1) + "%")
+    console.log(
+      "   Tasa de éxito:",
+      subscriptions.length > 0 ? ((sentCount / subscriptions.length) * 100).toFixed(1) + "%" : "0%",
+    )
 
     // Actualizar lastUsed para las suscripciones utilizadas
     if (sentCount > 0) {

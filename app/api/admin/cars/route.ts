@@ -201,6 +201,136 @@ async function handleCarRequest(request, method) {
         }
       }
 
+      // 🔔 CREAR SUSCRIPCIONES AUTOMÁTICAS
+      console.log("🔔 [CARS-API] ===== INICIANDO CREACIÓN DE SUSCRIPCIONES =====")
+      try {
+        console.log("🔔 [CARS-API] Creating automatic admin subscription for ticket:", carData.ticketAsociado)
+
+        // Check if admin subscription already exists
+        const existingAdminSub = await db.collection("ticket_subscriptions").findOne({
+          ticketCode: carData.ticketAsociado,
+          userType: "admin",
+          isActive: true,
+        })
+
+        console.log("🔍 [CARS-API] Existing admin subscription:", existingAdminSub ? "FOUND" : "NOT FOUND")
+
+        if (!existingAdminSub) {
+          // Create admin subscription for this ticket
+          const adminSubscription = {
+            ticketCode: carData.ticketAsociado,
+            subscription: {
+              endpoint: `admin-virtual-${carData.ticketAsociado}-${Date.now()}`,
+              keys: {
+                p256dh: "admin-virtual-key",
+                auth: "admin-virtual-auth",
+              },
+            },
+            userType: "admin",
+            isActive: true,
+            createdAt: now,
+            lifecycle: {
+              stage: "active",
+              createdAt: now,
+              updatedAt: now,
+            },
+            autoExpire: true,
+            expiresAt: null,
+            deviceInfo: {
+              userAgent: "admin-system",
+              timestamp: now,
+              ip: "system",
+            },
+            isVirtual: true, // Mark as virtual subscription for admin system
+            vehicleInfo: {
+              placa: carData.placa,
+              marca: carData.marca,
+              modelo: carData.modelo,
+              color: carData.color,
+            },
+          }
+
+          console.log("🔔 [CARS-API] Inserting admin subscription:", JSON.stringify(adminSubscription, null, 2))
+          const subscriptionResult = await db.collection("ticket_subscriptions").insertOne(adminSubscription)
+          console.log("✅ [CARS-API] Admin subscription created:", subscriptionResult.insertedId)
+        } else {
+          console.log("ℹ️ [CARS-API] Admin subscription already exists for ticket:", carData.ticketAsociado)
+        }
+
+        // Check if user placeholder subscription already exists
+        const existingUserSub = await db.collection("ticket_subscriptions").findOne({
+          ticketCode: carData.ticketAsociado,
+          userType: "user",
+        })
+
+        console.log("🔍 [CARS-API] Existing user subscription:", existingUserSub ? "FOUND" : "NOT FOUND")
+
+        if (!existingUserSub) {
+          // Create a placeholder user subscription that will be activated when user accesses the ticket
+          const userSubscription = {
+            ticketCode: carData.ticketAsociado,
+            subscription: {
+              endpoint: `user-placeholder-${carData.ticketAsociado}-${Date.now()}`,
+              keys: {
+                p256dh: "user-placeholder-key",
+                auth: "user-placeholder-auth",
+              },
+            },
+            userType: "user",
+            isActive: false, // Will be activated when user accesses ticket
+            createdAt: now,
+            lifecycle: {
+              stage: "placeholder",
+              createdAt: now,
+              updatedAt: now,
+            },
+            autoExpire: true,
+            expiresAt: null,
+            deviceInfo: {
+              userAgent: "system-placeholder",
+              timestamp: now,
+              ip: "system",
+            },
+            isPlaceholder: true, // Mark as placeholder until user accesses
+            vehicleInfo: {
+              placa: carData.placa,
+              marca: carData.marca,
+              modelo: carData.modelo,
+              color: carData.color,
+            },
+          }
+
+          console.log("🔔 [CARS-API] Inserting user subscription:", JSON.stringify(userSubscription, null, 2))
+          const userSubscriptionResult = await db.collection("ticket_subscriptions").insertOne(userSubscription)
+          console.log("✅ [CARS-API] User placeholder subscription created:", userSubscriptionResult.insertedId)
+        } else {
+          console.log("ℹ️ [CARS-API] User subscription already exists for ticket:", carData.ticketAsociado)
+        }
+
+        // Verify subscriptions were created
+        const allSubscriptions = await db
+          .collection("ticket_subscriptions")
+          .find({ ticketCode: carData.ticketAsociado })
+          .toArray()
+        console.log(
+          "🔍 [CARS-API] Total subscriptions for ticket",
+          carData.ticketAsociado + ":",
+          allSubscriptions.length,
+        )
+        allSubscriptions.forEach((sub, index) => {
+          console.log(
+            `   ${index + 1}. UserType: ${sub.userType}, Active: ${sub.isActive}, Virtual: ${sub.isVirtual}, Placeholder: ${sub.isPlaceholder}`,
+          )
+        })
+
+        // ELIMINADO: Ya no enviamos notificación en el registro
+        console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIONES COMPLETADA =====")
+      } catch (subscriptionError) {
+        console.error("❌ [CARS-API] Error creating subscriptions:", subscriptionError)
+        console.error("   Stack:", subscriptionError.stack)
+        // Don't fail the car registration if subscription fails
+      }
+
       // Crear entrada en historial
       const historyEntry = {
         carId: result.insertedId.toString(),
