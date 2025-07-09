@@ -48,7 +48,7 @@ export async function POST(request: Request) {
               nombreDueño,
               telefono,
               ticketAsociado,
-              estado: "ocupado",
+              estado: "estacionado", // Changed from "ocupado" to "estacionado"
               fechaActualizacion: now,
             },
           },
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
           ticketAsociado,
           horaIngreso: now,
           fechaRegistro: now,
-          estado: "ocupado",
+          estado: "estacionado", // Changed from "ocupado" to "estacionado"
         }
         const insertResult = await db.collection("cars").insertOne(newCar)
         carRecord = { _id: insertResult.insertedId.toString(), ...newCar }
@@ -96,63 +96,12 @@ export async function POST(request: Request) {
 
       console.log("🔍 DEBUG - Updated tickets for ticket:", ticketAsociado, ticketUpdate)
 
-      // 🔔 CREATE AUTOMATIC ADMIN SUBSCRIPTION FOR THIS TICKET
-      console.log("🔔 [CONFIRM-PARKING] ===== INICIANDO CREACIÓN DE SUSCRIPCIONES =====")
+      // 🔔 CREATE USER PLACEHOLDER SUBSCRIPTION FOR THIS TICKET
+      console.log("🔔 [CONFIRM-PARKING] ===== INICIANDO CREACIÓN DE SUSCRIPCIÓN USER =====")
       try {
-        console.log("🔔 [CONFIRM-PARKING] Creating automatic admin subscription for ticket:", ticketAsociado)
+        console.log("🔔 [CONFIRM-PARKING] Creating user placeholder subscription for ticket:", ticketAsociado)
 
-        // Check if admin subscription already exists
-        const existingAdminSub = await db.collection("ticket_subscriptions").findOne({
-          ticketCode: ticketAsociado,
-          userType: "admin",
-          isActive: true,
-        })
-
-        console.log("🔍 [CONFIRM-PARKING] Existing admin subscription:", existingAdminSub ? "FOUND" : "NOT FOUND")
-
-        if (!existingAdminSub) {
-          // Create admin subscription for this ticket
-          const adminSubscription = {
-            ticketCode: ticketAsociado,
-            subscription: {
-              endpoint: `admin-virtual-${ticketAsociado}-${Date.now()}`,
-              keys: {
-                p256dh: "admin-virtual-key",
-                auth: "admin-virtual-auth",
-              },
-            },
-            userType: "admin",
-            isActive: true,
-            createdAt: now,
-            lifecycle: {
-              stage: "active",
-              createdAt: now,
-              updatedAt: now,
-            },
-            autoExpire: true,
-            expiresAt: null,
-            deviceInfo: {
-              userAgent: "admin-system",
-              timestamp: now,
-              ip: "system",
-            },
-            isVirtual: true, // Mark as virtual subscription for admin system
-            vehicleInfo: {
-              placa,
-              marca,
-              modelo,
-              color,
-            },
-          }
-
-          console.log("🔔 [CONFIRM-PARKING] Inserting admin subscription:", JSON.stringify(adminSubscription, null, 2))
-          const subscriptionResult = await db.collection("ticket_subscriptions").insertOne(adminSubscription)
-          console.log("✅ [CONFIRM-PARKING] Admin subscription created:", subscriptionResult.insertedId)
-        } else {
-          console.log("ℹ️ [CONFIRM-PARKING] Admin subscription already exists for ticket:", ticketAsociado)
-        }
-
-        // Check if user placeholder subscription already exists
+        // Check if user subscription already exists
         const existingUserSub = await db.collection("ticket_subscriptions").findOne({
           ticketCode: ticketAsociado,
           userType: "user",
@@ -202,27 +151,50 @@ export async function POST(request: Request) {
           console.log("ℹ️ [CONFIRM-PARKING] User subscription already exists for ticket:", ticketAsociado)
         }
 
-        // Verify subscriptions were created
-        const allSubscriptions = await db
-          .collection("ticket_subscriptions")
-          .find({ ticketCode: ticketAsociado })
-          .toArray()
-        console.log(
-          "🔍 [CONFIRM-PARKING] Total subscriptions for ticket",
-          ticketAsociado + ":",
-          allSubscriptions.length,
-        )
-        allSubscriptions.forEach((sub, index) => {
-          console.log(
-            `   ${index + 1}. UserType: ${sub.userType}, Active: ${sub.isActive}, Virtual: ${sub.isVirtual}, Placeholder: ${sub.isPlaceholder}`,
-          )
-        })
-
-        console.log("🔔 [CONFIRM-PARKING] ===== CREACIÓN DE SUSCRIPCIONES COMPLETADA =====")
+        console.log("🔔 [CONFIRM-PARKING] ===== CREACIÓN DE SUSCRIPCIÓN USER COMPLETADA =====")
       } catch (subscriptionError) {
-        console.error("❌ [CONFIRM-PARKING] Error creating subscriptions:", subscriptionError)
+        console.error("❌ [CONFIRM-PARKING] Error creating user subscription:", subscriptionError)
         console.error("   Stack:", subscriptionError.stack)
         // Don't fail the parking registration if subscription fails
+      }
+
+      // 📢 SEND VEHICLE REGISTERED NOTIFICATION TO ADMIN (using real admin subscriptions)
+      try {
+        console.log("🔔 [CONFIRM-PARKING] Sending vehicle registered notification to admin...")
+        const notificationResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "vehicle_registered",
+              ticketCode: ticketAsociado,
+              userType: "admin",
+              data: {
+                plate: placa || "N/A",
+                marca: marca || "",
+                modelo: modelo || "",
+                color: color || "",
+                nombreDueño: nombreDueño || "",
+                telefono: telefono || "",
+                timestamp: now.toISOString(),
+              },
+            }),
+          },
+        )
+
+        if (notificationResponse.ok) {
+          const notificationResult = await notificationResponse.json()
+          console.log("✅ [CONFIRM-PARKING] Vehicle registered notification sent to admin:", notificationResult)
+        } else {
+          const errorText = await notificationResponse.text()
+          console.error("❌ [CONFIRM-PARKING] Failed to send vehicle registered notification:", errorText)
+        }
+      } catch (notificationError) {
+        console.error("❌ [CONFIRM-PARKING] Error sending vehicle registered notification:", notificationError)
+        // Don't fail the registration if notification fails
       }
 
       console.log(`✅ Vehículo registrado para ticket: ${ticketAsociado} carId: ${carRecord._id}`)
@@ -261,10 +233,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: "Ticket no encontrado o no está ocupado" }, { status: 404 })
       }
 
-      // Find the associated car using the ticket code
+      // Find the associated car using the ticket code - look for "estacionado" state
       const car = await db.collection("cars").findOne({
         ticketAsociado: ticketCode,
-        estado: { $in: ["estacionado", "ocupado"] },
+        estado: "estacionado", // Only look for "estacionado" state
       })
 
       if (!car) {
@@ -273,12 +245,12 @@ export async function POST(request: Request) {
 
       const carId = car._id.toString()
 
-      // Update car status
+      // Update car status to confirmed
       const carResult = await db.collection("cars").updateOne(
         { _id: new ObjectId(carId) },
         {
           $set: {
-            estado: "estacionado",
+            estado: "estacionado_confirmado", // Changed to "estacionado_confirmado"
             fechaEstacionamiento: now,
             updatedAt: now,
           },
@@ -289,12 +261,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: "Error actualizando el vehículo" }, { status: 404 })
       }
 
-      // Update ticket status and add car info
+      // Update ticket status to confirmed
       await db.collection("tickets").updateOne(
         { codigoTicket: ticketCode },
         {
           $set: {
-            estado: "confirmado",
+            estado: "estacionado_confirmado", // Changed to "estacionado_confirmado"
             fechaConfirmacion: now,
             updatedAt: now,
             carInfo: {
@@ -318,14 +290,14 @@ export async function POST(request: Request) {
         { carId: carId },
         {
           $set: {
-            estadoActual: "estacionado",
+            estadoActual: "estacionado_confirmado", // Changed to "estacionado_confirmado"
             fechaUltimaActualizacion: now,
           },
           $push: {
             eventos: {
               tipo: "confirmacion_estacionamiento",
               fecha: now,
-              estado: "estacionado",
+              estado: "estacionado_confirmado", // Changed to "estacionado_confirmado"
               datos: {
                 ticketCodigo: ticketCode,
                 confirmadoPor: "admin",
@@ -336,7 +308,7 @@ export async function POST(request: Request) {
         { upsert: true },
       )
 
-      // Send notification to admin about parking confirmation
+      // Send notification to admin about parking confirmation (using real admin subscriptions)
       try {
         console.log("🔔 [CONFIRM-PARKING] Sending vehicle parked notification to admin...")
         const notificationResponse = await fetch(
@@ -349,7 +321,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
               type: "vehicle_parked",
               ticketCode: ticketCode,
-              userType: "admin", // Cambiado de "user" a "admin"
+              userType: "admin",
               data: {
                 plate: car.placa || "N/A",
                 marca: car.marca || "",

@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     console.log("   Data:", data)
 
     let subscriptions = []
-    let query = {}
+    let query: any = {}
 
     // Construir query para buscar suscripciones
     if (type === "test") {
@@ -38,23 +38,28 @@ export async function POST(request: Request) {
       }
       console.log("🧪 [SEND-NOTIFICATION] Modo TEST - Buscando suscripciones para TEST-001")
     } else if (userType === "admin") {
-      // Para admins, buscar suscripciones admin (pueden ser de cualquier ticket)
+      // Para admins, buscar SOLO suscripciones reales de admin (no virtuales)
       query = {
         userType: "admin",
         isActive: true,
+        $or: [
+          { isVirtual: { $exists: false } }, // Suscripciones reales (sin campo isVirtual)
+          { isVirtual: false }, // Suscripciones explícitamente marcadas como no virtuales
+        ],
       }
-      if (ticketCode) {
-        query.ticketCode = ticketCode
-      }
-      console.log("👨‍💼 [SEND-NOTIFICATION] Buscando suscripciones de ADMIN")
+      console.log("👨‍💼 [SEND-NOTIFICATION] Buscando suscripciones REALES de ADMIN")
     } else if (userType === "user" && ticketCode) {
-      // Para usuarios, buscar suscripciones específicas del ticket
+      // Para usuarios, buscar suscripciones específicas del ticket (reales, no placeholder)
       query = {
         ticketCode: ticketCode,
         userType: "user",
         isActive: true,
+        $or: [
+          { isPlaceholder: { $exists: false } }, // Suscripciones reales (sin campo isPlaceholder)
+          { isPlaceholder: false }, // Suscripciones explícitamente marcadas como no placeholder
+        ],
       }
-      console.log("👤 [SEND-NOTIFICATION] Buscando suscripciones de USER para ticket:", ticketCode)
+      console.log("👤 [SEND-NOTIFICATION] Buscando suscripciones REALES de USER para ticket:", ticketCode)
     } else {
       console.error("❌ [SEND-NOTIFICATION] Parámetros insuficientes para determinar suscripciones")
       return NextResponse.json({ error: "Parámetros insuficientes" }, { status: 400 })
@@ -77,6 +82,14 @@ export async function POST(request: Request) {
       console.log(`   Virtual: ${doc.isVirtual}`)
       console.log(`   Placeholder: ${doc.isPlaceholder}`)
       console.log(`   Endpoint: ${doc.subscription?.endpoint?.substring(0, 50)}...`)
+      console.log(
+        `   Keys valid: ${!!(
+          doc.subscription?.keys?.p256dh &&
+            doc.subscription?.keys?.auth &&
+            doc.subscription.keys.p256dh !== "admin-virtual-key" &&
+            doc.subscription.keys.p256dh !== "user-placeholder-key"
+        )}`,
+      )
     })
 
     if (subscriptionDocs.length === 0) {
@@ -94,64 +107,66 @@ export async function POST(request: Request) {
         })
       }
 
-      // Debug: mostrar todas las suscripciones
-      const allSubs = await db.collection("ticket_subscriptions").find({}).toArray()
-      console.log("📋 [SEND-NOTIFICATION] Todas las suscripciones en BD:")
-      allSubs.forEach((sub, index) => {
-        console.log(`   ${index + 1}. Ticket: ${sub.ticketCode}, UserType: ${sub.userType}, Active: ${sub.isActive}`)
-      })
+      // Debug: mostrar todas las suscripciones de admin
+      if (userType === "admin") {
+        const adminSubs = await db.collection("ticket_subscriptions").find({ userType: "admin" }).toArray()
+        console.log("📋 [SEND-NOTIFICATION] Todas las suscripciones de ADMIN:")
+        adminSubs.forEach((sub, index) => {
+          console.log(
+            `   ${index + 1}. Ticket: ${sub.ticketCode}, Active: ${sub.isActive}, Virtual: ${sub.isVirtual}, Real: ${!sub.isVirtual}`,
+          )
+        })
+      }
 
       return NextResponse.json({
+        success: true,
         message: "No hay suscripciones activas",
         sent: 0,
         total: 0,
         query: query,
         debug: {
-          totalSubscriptionsInDB: allSubs.length,
           subscriptionsFound: subscriptionDocs.length,
         },
       })
     }
 
-    // Extraer suscripciones push - INCLUIR suscripciones virtuales activas
-    if (type === "test") {
-      // Para tests, incluir todas las suscripciones
-      subscriptions = subscriptionDocs.map((doc) => doc.subscription).filter((sub) => sub && sub.endpoint && sub.keys)
-      console.log("🧪 [SEND-NOTIFICATION] Modo TEST - Incluyendo todas las suscripciones")
-    } else {
-      // Para notificaciones reales, incluir suscripciones reales Y virtuales activas, excluir solo placeholder
-      subscriptions = subscriptionDocs
-        .filter((doc) => {
-          // Incluir suscripciones reales (no virtuales, no placeholder)
-          if (!doc.isVirtual && !doc.isPlaceholder) {
-            console.log(`✅ [SEND-NOTIFICATION] Incluyendo suscripción real para ${doc.userType}`)
-            return true
-          }
-          // Incluir suscripciones virtuales activas (para admin)
-          if (doc.isVirtual && doc.isActive) {
-            console.log(`✅ [SEND-NOTIFICATION] Incluyendo suscripción virtual activa para ${doc.userType}`)
-            return true
-          }
-          // Excluir placeholder
-          if (doc.isPlaceholder) {
-            console.log(`❌ [SEND-NOTIFICATION] Excluyendo suscripción placeholder para ${doc.userType}`)
-            return false
-          }
-          console.log(`❌ [SEND-NOTIFICATION] Excluyendo suscripción inactiva para ${doc.userType}`)
+    // Extraer suscripciones push - SOLO suscripciones con keys reales
+    subscriptions = subscriptionDocs
+      .map((doc) => doc.subscription)
+      .filter((sub) => {
+        if (!sub || !sub.endpoint || !sub.keys) {
+          console.log("❌ [SEND-NOTIFICATION] Suscripción sin endpoint o keys")
           return false
-        })
-        .map((doc) => doc.subscription)
-        .filter((sub) => sub && sub.endpoint && sub.keys)
-    }
+        }
+
+        // Verificar que las keys no sean hardcodeadas
+        const hasRealKeys =
+          sub.keys.p256dh &&
+          sub.keys.auth &&
+          sub.keys.p256dh !== "admin-virtual-key" &&
+          sub.keys.p256dh !== "user-placeholder-key" &&
+          sub.keys.auth !== "admin-virtual-auth" &&
+          sub.keys.auth !== "user-placeholder-auth"
+
+        if (!hasRealKeys) {
+          console.log("❌ [SEND-NOTIFICATION] Suscripción con keys hardcodeadas, omitiendo")
+          return false
+        }
+
+        console.log("✅ [SEND-NOTIFICATION] Suscripción válida con keys reales")
+        return true
+      })
 
     console.log("✅ [SEND-NOTIFICATION] Suscripciones válidas encontradas:", subscriptions.length)
 
-    if (subscriptions.length === 0 && type !== "test") {
+    if (subscriptions.length === 0) {
       console.log("❌ [SEND-NOTIFICATION] No hay suscripciones válidas para enviar")
       return NextResponse.json({
-        message: "No hay suscripciones válidas",
+        success: true,
+        message: "No hay suscripciones válidas con keys reales",
         sent: 0,
         total: subscriptionDocs.length,
+        reason: "Todas las suscripciones encontradas tienen keys hardcodeadas o son virtuales/placeholder",
       })
     }
 
@@ -203,6 +218,15 @@ export async function POST(request: Request) {
 
       case "vehicle_exit":
         notificationPayload = pushNotificationService.createVehicleExitNotification(ticketCode, data.plate || "N/A")
+        break
+
+      case "vehicle_delivered":
+        notificationPayload = pushNotificationService.createVehicleDeliveredNotification(
+          ticketCode,
+          data.plate || "N/A",
+          data.duration || 0,
+          data.amount || 0,
+        )
         break
 
       case "admin_payment":
@@ -261,6 +285,7 @@ export async function POST(request: Request) {
     console.log("✅ [SEND-NOTIFICATION] ===== ENVÍO COMPLETADO =====")
 
     return NextResponse.json({
+      success: true,
       message: `Notificaciones enviadas: ${sentCount}/${subscriptions.length}`,
       sent: sentCount,
       total: subscriptions.length,
@@ -276,7 +301,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Error interno del servidor",
-        message: error.message,
+        details: error instanceof Error ? error.message : "Error desconocido",
       },
       { status: 500 },
     )

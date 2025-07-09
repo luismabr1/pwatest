@@ -201,63 +201,12 @@ async function handleCarRequest(request, method) {
         }
       }
 
-      // 🔔 CREAR SUSCRIPCIONES AUTOMÁTICAS
-      console.log("🔔 [CARS-API] ===== INICIANDO CREACIÓN DE SUSCRIPCIONES =====")
+      // 🔔 CREATE USER PLACEHOLDER SUBSCRIPTION FOR THIS TICKET
+      console.log("🔔 [CARS-API] ===== INICIANDO CREACIÓN DE SUSCRIPCIÓN USER =====")
       try {
-        console.log("🔔 [CARS-API] Creating automatic admin subscription for ticket:", carData.ticketAsociado)
+        console.log("🔔 [CARS-API] Creating user placeholder subscription for ticket:", carData.ticketAsociado)
 
-        // Check if admin subscription already exists
-        const existingAdminSub = await db.collection("ticket_subscriptions").findOne({
-          ticketCode: carData.ticketAsociado,
-          userType: "admin",
-          isActive: true,
-        })
-
-        console.log("🔍 [CARS-API] Existing admin subscription:", existingAdminSub ? "FOUND" : "NOT FOUND")
-
-        if (!existingAdminSub) {
-          // Create admin subscription for this ticket
-          const adminSubscription = {
-            ticketCode: carData.ticketAsociado,
-            subscription: {
-              endpoint: `admin-virtual-${carData.ticketAsociado}-${Date.now()}`,
-              keys: {
-                p256dh: "admin-virtual-key",
-                auth: "admin-virtual-auth",
-              },
-            },
-            userType: "admin",
-            isActive: true,
-            createdAt: now,
-            lifecycle: {
-              stage: "active",
-              createdAt: now,
-              updatedAt: now,
-            },
-            autoExpire: true,
-            expiresAt: null,
-            deviceInfo: {
-              userAgent: "admin-system",
-              timestamp: now,
-              ip: "system",
-            },
-            isVirtual: true, // Mark as virtual subscription for admin system
-            vehicleInfo: {
-              placa: carData.placa,
-              marca: carData.marca,
-              modelo: carData.modelo,
-              color: carData.color,
-            },
-          }
-
-          console.log("🔔 [CARS-API] Inserting admin subscription:", JSON.stringify(adminSubscription, null, 2))
-          const subscriptionResult = await db.collection("ticket_subscriptions").insertOne(adminSubscription)
-          console.log("✅ [CARS-API] Admin subscription created:", subscriptionResult.insertedId)
-        } else {
-          console.log("ℹ️ [CARS-API] Admin subscription already exists for ticket:", carData.ticketAsociado)
-        }
-
-        // Check if user placeholder subscription already exists
+        // Check if user subscription already exists
         const existingUserSub = await db.collection("ticket_subscriptions").findOne({
           ticketCode: carData.ticketAsociado,
           userType: "user",
@@ -307,27 +256,50 @@ async function handleCarRequest(request, method) {
           console.log("ℹ️ [CARS-API] User subscription already exists for ticket:", carData.ticketAsociado)
         }
 
-        // Verify subscriptions were created
-        const allSubscriptions = await db
-          .collection("ticket_subscriptions")
-          .find({ ticketCode: carData.ticketAsociado })
-          .toArray()
-        console.log(
-          "🔍 [CARS-API] Total subscriptions for ticket",
-          carData.ticketAsociado + ":",
-          allSubscriptions.length,
-        )
-        allSubscriptions.forEach((sub, index) => {
-          console.log(
-            `   ${index + 1}. UserType: ${sub.userType}, Active: ${sub.isActive}, Virtual: ${sub.isVirtual}, Placeholder: ${sub.isPlaceholder}`,
-          )
-        })
-
-        console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIONES COMPLETADA =====")
+        console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIÓN USER COMPLETADA =====")
       } catch (subscriptionError) {
-        console.error("❌ [CARS-API] Error creating subscriptions:", subscriptionError)
+        console.error("❌ [CARS-API] Error creating user subscription:", subscriptionError)
         console.error("   Stack:", subscriptionError.stack)
         // Don't fail the car registration if subscription fails
+      }
+
+      // 📢 SEND VEHICLE REGISTERED NOTIFICATION TO ADMIN (using real admin subscriptions)
+      try {
+        console.log("🔔 [CARS-API] Sending vehicle registered notification to admin...")
+        const notificationResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "vehicle_registered",
+              ticketCode: carData.ticketAsociado,
+              userType: "admin",
+              data: {
+                plate: carData.placa || "N/A",
+                marca: carData.marca || "",
+                modelo: carData.modelo || "",
+                color: carData.color || "",
+                nombreDueño: carData.nombreDueño || "",
+                telefono: carData.telefono || "",
+                timestamp: now.toISOString(),
+              },
+            }),
+          },
+        )
+
+        if (notificationResponse.ok) {
+          const notificationResult = await notificationResponse.json()
+          console.log("✅ [CARS-API] Vehicle registered notification sent to admin:", notificationResult)
+        } else {
+          const errorText = await notificationResponse.text()
+          console.error("❌ [CARS-API] Failed to send vehicle registered notification:", errorText)
+        }
+      } catch (notificationError) {
+        console.error("❌ [CARS-API] Error sending vehicle registered notification:", notificationError)
+        // Don't fail the car registration if notification fails
       }
 
       // Crear entrada en historial

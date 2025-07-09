@@ -55,7 +55,6 @@ async function seedDatabase() {
       "banks",
       "car_history",
       "ticket_subscriptions", // notificaciones
-      "push_subscriptions", // notificaciones
     ]
 
     for (const collection of collections) {
