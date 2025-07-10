@@ -1,60 +1,58 @@
-import { NextResponse } from "next/server"
-import clientPromise from "@/lib/mongodb"
-import { ObjectId } from "mongodb"
-import { v2 as cloudinary } from "cloudinary"
+import { NextResponse } from "next/server";
+import clientPromise from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
+import { v2 as cloudinary } from "cloudinary";
+import { createHash } from "crypto";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
-})
+});
 
-export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const client = await clientPromise
-    const db = client.db("parking")
+    const client = await clientPromise;
+    const db = client.db("parking");
 
     const cars = await db
       .collection("cars")
       .find({ estado: { $in: ["estacionado", "estacionado_confirmado"] } })
       .sort({ horaIngreso: -1 })
-      .toArray()
+      .toArray();
 
-    return NextResponse.json(cars)
+    return NextResponse.json(cars);
   } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("Error fetching cars:", error)
-    }
-    return NextResponse.json({ message: "Error al obtener carros" }, { status: 500 })
+    console.error("Error fetching cars:", error);
+    return NextResponse.json({ message: "Error al obtener carros" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
-  return handleCarRequest(request, "POST")
+  return handleCarRequest(request, "POST");
 }
 
 export async function PUT(request) {
-  return handleCarRequest(request, "PUT")
+  return handleCarRequest(request, "PUT");
 }
 
 async function handleCarRequest(request, method) {
   try {
-    const client = await clientPromise
-    const db = client.db("parking")
+    const client = await clientPromise;
+    const db = client.db("parking");
 
-    const contentType = request.headers.get("content-type") || ""
-    let carData
-    let carId
-    let isUpdate = false
+    const contentType = request.headers.get("content-type") || "";
+    let carData;
+    let carId;
+    let isUpdate = false;
 
-    // Manejar tanto FormData como JSON
+    // Manejar FormData o JSON
     if (contentType.includes("multipart/form-data")) {
-      // Manejo de FormData (para uploads de imágenes)
-      const formData = await request.formData()
-      carId = formData.get("carId")?.toString()
-      isUpdate = method === "PUT" && carId
+      const formData = await request.formData();
+      carId = formData.get("carId")?.toString();
+      isUpdate = method === "PUT" && carId;
 
       carData = {
         placa: formData.get("placa")?.toString().toUpperCase() || "",
@@ -64,45 +62,44 @@ async function handleCarRequest(request, method) {
         nombreDueño: formData.get("nombreDueño")?.toString() || "",
         telefono: formData.get("telefono")?.toString() || "",
         ticketAsociado: formData.get("ticketAsociado")?.toString() || "",
-      }
+      };
 
-      // Manejar imágenes si existen
-      const plateImage = formData.get("plateImage") as File | null
-      const vehicleImage = formData.get("vehicleImage") as File | null
-      const plateImageUrl = formData.get("plateImageUrl")?.toString()
-      const vehicleImageUrl = formData.get("vehicleImageUrl")?.toString()
+      // Manejar imágenes
+      const plateImage = formData.get("plateImage") as File | null;
+      const vehicleImage = formData.get("vehicleImage") as File | null;
+      const plateImageUrl = formData.get("plateImageUrl")?.toString();
+      const vehicleImageUrl = formData.get("vehicleImageUrl")?.toString();
 
       if (plateImage || vehicleImage || plateImageUrl || vehicleImageUrl) {
         carData.imagenes = {
           fechaCaptura: new Date(),
           capturaMetodo: "manual",
-        }
+        };
 
         if (plateImage) {
           const plateUploadResponse = await cloudinary.uploader.upload(
             `data:image/jpeg;base64,${await plateImage.arrayBuffer().then(Buffer.from).toString("base64")}`,
-            { folder: "parking-plates" },
-          )
-          carData.imagenes.plateImageUrl = plateUploadResponse.secure_url
+            { folder: "parking-plates" }
+          );
+          carData.imagenes.plateImageUrl = plateUploadResponse.secure_url;
         } else if (plateImageUrl) {
-          carData.imagenes.plateImageUrl = plateImageUrl
+          carData.imagenes.plateImageUrl = plateImageUrl;
         }
 
         if (vehicleImage) {
           const vehicleUploadResponse = await cloudinary.uploader.upload(
             `data:image/jpeg;base64,${await vehicleImage.arrayBuffer().then(Buffer.from).toString("base64")}`,
-            { folder: "parking-vehicles" },
-          )
-          carData.imagenes.vehicleImageUrl = vehicleUploadResponse.secure_url
+            { folder: "parking-vehicles" }
+          );
+          carData.imagenes.vehicleImageUrl = vehicleUploadResponse.secure_url;
         } else if (vehicleImageUrl) {
-          carData.imagenes.vehicleImageUrl = vehicleImageUrl
+          carData.imagenes.vehicleImageUrl = vehicleImageUrl;
         }
       }
     } else {
-      // Manejo de JSON (para formulario manual)
-      const jsonData = await request.json()
-      carId = jsonData.carId
-      isUpdate = method === "PUT" && carId
+      const jsonData = await request.json();
+      carId = jsonData.carId;
+      isUpdate = method === "PUT" && carId;
 
       carData = {
         placa: (jsonData.placa || "").toString().toUpperCase(),
@@ -112,68 +109,73 @@ async function handleCarRequest(request, method) {
         nombreDueño: jsonData.nombreDueño || "",
         telefono: jsonData.telefono || "",
         ticketAsociado: jsonData.ticketAsociado || "",
-      }
+      };
 
-      // Si hay imágenes en el JSON (desde captura de vehículo)
       if (jsonData.imagenes) {
         carData.imagenes = {
           ...jsonData.imagenes,
           fechaCaptura: new Date(),
-        }
+        };
       }
     }
 
-    if (process.env.NODE_ENV === "development") {
-      console.log(`${method} request received`, { carId, ...carData })
-    }
+    console.log(`${method} request received`, { carId, ...carData });
 
-    // Validar campos requeridos para formulario manual
+    // Validar campos requeridos
     if (!carData.placa || !carData.ticketAsociado) {
       return NextResponse.json(
-        {
-          error: "Placa y ticket son campos obligatorios",
-        },
-        { status: 400 },
-      )
+        { error: "Placa y ticket son campos obligatorios" },
+        { status: 400 }
+      );
     }
 
-    let existingCar
+    let existingCar;
     if (isUpdate) {
-      existingCar = await db.collection("cars").findOne({ _id: new ObjectId(carId) })
+      existingCar = await db.collection("cars").findOne({ _id: new ObjectId(carId) });
       if (!existingCar) {
-        return NextResponse.json({ error: "Vehículo no encontrado" }, { status: 404 })
+        return NextResponse.json({ error: "Vehículo no encontrado" }, { status: 404 });
       }
     }
 
-    const now = new Date()
+    const now = new Date();
     const finalCarData = {
       ...carData,
       horaIngreso: isUpdate ? existingCar.horaIngreso : now,
       estado: isUpdate ? existingCar.estado : "estacionado",
       fechaRegistro: isUpdate ? existingCar.fechaRegistro : now,
       lastModified: now,
-    }
+    };
 
-    // Si no hay imágenes, agregar estructura básica
     if (!finalCarData.imagenes) {
       finalCarData.imagenes = {
         fechaCaptura: now,
         capturaMetodo: "manual",
-      }
+      };
     }
 
-    let result
+    let result;
     if (isUpdate) {
-      result = await db.collection("cars").updateOne({ _id: new ObjectId(carId) }, { $set: finalCarData })
+      result = await db.collection("cars").updateOne({ _id: new ObjectId(carId) }, { $set: finalCarData });
       if (result.matchedCount === 0) {
-        return NextResponse.json({ error: "Vehículo no encontrado" }, { status: 404 })
+        return NextResponse.json({ error: "Vehículo no encontrado" }, { status: 404 });
       }
     } else {
-      result = await db.collection("cars").insertOne(finalCarData)
-      finalCarData._id = result.insertedId
+      result = await db.collection("cars").insertOne(finalCarData);
+      finalCarData._id = result.insertedId;
 
-      // Actualizar ticket asociado
+      // Actualizar ticket asociado con token temporal
       if (carData.ticketAsociado) {
+        const secretKey = process.env.SECRET_KEY;
+        if (!secretKey) {
+          throw new Error("Clave secreta no configurada en .env");
+        }
+
+        const accessToken = createHash("sha256")
+          .update(`${carData.ticketAsociado}${secretKey}`)
+          .digest("hex")
+          .substring(0, 16);
+        const accessTokenExpiration = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
+
         const updateResult = await db.collection("tickets").updateOne(
           { codigoTicket: carData.ticketAsociado },
           {
@@ -192,114 +194,93 @@ async function handleCarRequest(request, method) {
                 imagenes: finalCarData.imagenes,
               },
               horaOcupacion: now.toISOString(),
+              accessToken,
+              accessTokenExpiration,
             },
           },
-          { upsert: true },
-        )
-        if (process.env.NODE_ENV === "development") {
-          console.log("🔍 DEBUG - Updated tickets for ticket:", carData.ticketAsociado, updateResult)
-        }
+          { upsert: true }
+        );
+        console.log("🔍 DEBUG - Updated ticket with token:", carData.ticketAsociado, updateResult);
       }
 
-      // 🔔 CREATE USER PLACEHOLDER SUBSCRIPTION FOR THIS TICKET
-      console.log("🔔 [CARS-API] ===== INICIANDO CREACIÓN DE SUSCRIPCIÓN USER =====")
-      try {
-        console.log("🔔 [CARS-API] Creating user placeholder subscription for ticket:", carData.ticketAsociado)
+      // Crear suscripción placeholder para el usuario
+      console.log("🔔 [CARS-API] ===== INICIANDO CREACIÓN DE SUSCRIPCIÓN USER =====");
+      const existingUserSub = await db.collection("ticket_subscriptions").findOne({
+        ticketCode: carData.ticketAsociado,
+        userType: "user",
+      });
 
-        // Check if user subscription already exists
-        const existingUserSub = await db.collection("ticket_subscriptions").findOne({
+      if (!existingUserSub) {
+        const userSubscription = {
           ticketCode: carData.ticketAsociado,
-          userType: "user",
-        })
-
-        console.log("🔍 [CARS-API] Existing user subscription:", existingUserSub ? "FOUND" : "NOT FOUND")
-
-        if (!existingUserSub) {
-          // Create a placeholder user subscription that will be activated when user accesses the ticket
-          const userSubscription = {
-            ticketCode: carData.ticketAsociado,
-            subscription: {
-              endpoint: `user-placeholder-${carData.ticketAsociado}-${Date.now()}`,
-              keys: {
-                p256dh: "user-placeholder-key",
-                auth: "user-placeholder-auth",
-              },
+          subscription: {
+            endpoint: `user-placeholder-${carData.ticketAsociado}-${Date.now()}`,
+            keys: {
+              p256dh: "user-placeholder-key",
+              auth: "user-placeholder-auth",
             },
-            userType: "user",
-            isActive: false, // Will be activated when user accesses ticket
-            createdAt: now,
-            lifecycle: {
-              stage: "placeholder",
-              createdAt: now,
-              updatedAt: now,
-            },
-            autoExpire: true,
-            expiresAt: null,
-            deviceInfo: {
-              userAgent: "system-placeholder",
-              timestamp: now,
-              ip: "system",
-            },
-            isPlaceholder: true, // Mark as placeholder until user accesses
-            vehicleInfo: {
-              placa: carData.placa,
-              marca: carData.marca,
-              modelo: carData.modelo,
-              color: carData.color,
-            },
-          }
-
-          console.log("🔔 [CARS-API] Inserting user subscription:", JSON.stringify(userSubscription, null, 2))
-          const userSubscriptionResult = await db.collection("ticket_subscriptions").insertOne(userSubscription)
-          console.log("✅ [CARS-API] User placeholder subscription created:", userSubscriptionResult.insertedId)
-        } else {
-          console.log("ℹ️ [CARS-API] User subscription already exists for ticket:", carData.ticketAsociado)
-        }
-
-        console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIÓN USER COMPLETADA =====")
-      } catch (subscriptionError) {
-        console.error("❌ [CARS-API] Error creating user subscription:", subscriptionError)
-        console.error("   Stack:", subscriptionError.stack)
-        // Don't fail the car registration if subscription fails
-      }
-
-      // 📢 SEND VEHICLE REGISTERED NOTIFICATION TO ADMIN (using real admin subscriptions)
-      try {
-        console.log("🔔 [CARS-API] Sending vehicle registered notification to admin...")
-        const notificationResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: "vehicle_registered",
-              ticketCode: carData.ticketAsociado,
-              userType: "admin",
-              data: {
-                plate: carData.placa || "N/A",
-                marca: carData.marca || "",
-                modelo: carData.modelo || "",
-                color: carData.color || "",
-                nombreDueño: carData.nombreDueño || "",
-                telefono: carData.telefono || "",
-                timestamp: now.toISOString(),
-              },
-            }),
           },
-        )
+          userType: "user",
+          isActive: false,
+          createdAt: now,
+          lifecycle: {
+            stage: "placeholder",
+            createdAt: now,
+            updatedAt: now,
+          },
+          autoExpire: true,
+          expiresAt: null,
+          deviceInfo: {
+            userAgent: "system-placeholder",
+            timestamp: now,
+            ip: "system",
+          },
+          isPlaceholder: true,
+          vehicleInfo: {
+            placa: carData.placa,
+            marca: carData.marca,
+            modelo: carData.modelo,
+            color: carData.color,
+          },
+        };
 
-        if (notificationResponse.ok) {
-          const notificationResult = await notificationResponse.json()
-          console.log("✅ [CARS-API] Vehicle registered notification sent to admin:", notificationResult)
-        } else {
-          const errorText = await notificationResponse.text()
-          console.error("❌ [CARS-API] Failed to send vehicle registered notification:", errorText)
+        console.log("🔔 [CARS-API] Inserting user subscription:", JSON.stringify(userSubscription));
+        await db.collection("ticket_subscriptions").insertOne(userSubscription);
+        console.log("✅ [CARS-API] User placeholder subscription created");
+      } else {
+        console.log("ℹ️ [CARS-API] User subscription already exists for ticket:", carData.ticketAsociado);
+      }
+      console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIÓN USER COMPLETADA =====");
+
+      // Enviar notificación a admin
+      console.log("🔔 [CARS-API] Sending vehicle registered notification to admin...");
+      const notificationResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "vehicle_registered",
+            ticketCode: carData.ticketAsociado,
+            userType: "admin",
+            data: {
+              plate: carData.placa || "N/A",
+              marca: carData.marca || "",
+              modelo: carData.modelo || "",
+              color: carData.color || "",
+              nombreDueño: carData.nombreDueño || "",
+              telefono: carData.telefono || "",
+              timestamp: now.toISOString(),
+            },
+          }),
         }
-      } catch (notificationError) {
-        console.error("❌ [CARS-API] Error sending vehicle registered notification:", notificationError)
-        // Don't fail the car registration if notification fails
+      );
+
+      if (notificationResponse.ok) {
+        const notificationResult = await notificationResponse.json();
+        console.log("✅ [CARS-API] Vehicle registered notification sent to admin:", notificationResult);
+      } else {
+        console.error("❌ [CARS-API] Failed to send vehicle registered notification:", await notificationResponse.text());
       }
 
       // Crear entrada en historial
@@ -326,8 +307,6 @@ async function handleCarRequest(request, method) {
             datos: {
               metodoRegistro: finalCarData.imagenes?.capturaMetodo || "manual",
               imagenes: finalCarData.imagenes || null,
-              confianzaPlaca: finalCarData.imagenes?.confianzaPlaca || 0,
-              confianzaVehiculo: finalCarData.imagenes?.confianzaVehiculo || 0,
             },
           },
         ],
@@ -335,28 +314,24 @@ async function handleCarRequest(request, method) {
         pagosRechazados: [],
         montosPendientes: [],
         montoTotalPagado: 0,
-      }
-      await db.collection("car_history").insertOne(historyEntry)
+      };
+      await db.collection("car_history").insertOne(historyEntry);
     }
 
     const updatedCar = await db.collection("cars").findOne({
       _id: isUpdate ? new ObjectId(carId) : result.insertedId,
-    })
+    });
 
     return NextResponse.json({
       success: true,
       message: isUpdate ? "Vehículo actualizado correctamente" : "Vehículo registrado correctamente",
       car: updatedCar,
-    })
+    });
   } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("Error handling car request:", error)
-    }
+    console.error("Error handling car request:", error);
     return NextResponse.json(
-      {
-        error: error.message || "Error interno del servidor",
-      },
-      { status: 500 },
-    )
+      { error: error.message || "Error interno del servidor" },
+      { status: 500 }
+    );
   }
 }
