@@ -1,27 +1,27 @@
-import { type NextRequest, NextResponse } from "next/server"
-import clientPromise from "@/lib/mongodb"
-import { ObjectId } from "mongodb"
-import { pushNotificationService } from "@/lib/push-notifications"
+import { type NextRequest, NextResponse } from "next/server";
+import clientPromise from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
+import { pushNotificationService } from "@/lib/push-notifications";
 
-export const dynamic = "force-dynamic"
-export const fetchCache = "force-no-store"
-export const revalidate = 0
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
 
 export async function POST(request: NextRequest) {
-  const startTime = Date.now()
+  const startTime = Date.now();
 
   try {
-    const { paymentId, validadoPor, observaciones } = await request.json()
+    const { paymentId, validadoPor, observaciones } = await request.json();
 
     if (!paymentId || !validadoPor || !observaciones) {
-      return NextResponse.json({ error: "ID de pago, validador y razón del rechazo son requeridos" }, { status: 400 })
+      return NextResponse.json({ error: "ID de pago, validador y razón del rechazo son requeridos" }, { status: 400 });
     }
 
-    const client = await clientPromise
-    const db = client.db("parking")
+    const client = await clientPromise;
+    const db = client.db("parking");
 
     // Start transaction
-    const session = client.startSession()
+    const session = client.startSession();
 
     try {
       await session.withTransaction(async () => {
@@ -40,13 +40,13 @@ export async function POST(request: NextRequest) {
             returnDocument: "after",
             session,
           },
-        )
+        );
 
         if (!paymentResult) {
-          throw new Error("Pago no encontrado")
+          throw new Error("Pago no encontrado");
         }
 
-        const payment = paymentResult
+        const payment = paymentResult;
 
         // Update ticket status back to active
         await db.collection("tickets").updateOne(
@@ -61,10 +61,10 @@ export async function POST(request: NextRequest) {
             },
           },
           { session },
-        )
+        );
 
         // Get ticket info for notifications
-        const ticket = await db.collection("tickets").findOne({ codigoTicket: payment.codigoTicket }, { session })
+        const ticket = await db.collection("tickets").findOne({ codigoTicket: payment.codigoTicket }, { session });
 
         // Send notification to user who made the payment
         try {
@@ -75,22 +75,38 @@ export async function POST(request: NextRequest) {
               ticketCode: payment.codigoTicket,
               isActive: true,
             })
-            .toArray()
+            .toArray();
 
           if (ticketSubscriptions.length > 0) {
-            const subscriptions = ticketSubscriptions.map((sub) => sub.subscription)
+            const notificationResponse = await fetch(
+              `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  type: "payment_rejected",
+                  ticketCode: payment.codigoTicket,
+                  userType: "user",
+                  data: {
+                    reason: observaciones,
+                  },
+                }),
+              },
+            );
 
-            const notification = pushNotificationService.createPaymentRejectedNotification(
-              payment.codigoTicket,
-              observaciones,
-            )
-
-            await pushNotificationService.sendToMultipleSubscriptions(subscriptions, notification)
-
-            console.log(`❌ Notificación de pago rechazado enviada para ticket ${payment.codigoTicket}`)
+            if (!notificationResponse.ok) {
+              const errorText = await notificationResponse.text();
+              console.error("❌ [REJECT-PAYMENT] Error en notificación:", errorText);
+            } else {
+              console.log(`❌ [REJECT-PAYMENT] Notificación de pago rechazado enviada para ticket ${payment.codigoTicket}`);
+            }
+          } else {
+            console.log("⚠️ [REJECT-PAYMENT] No hay suscripciones activas para este ticket");
           }
         } catch (notificationError) {
-          console.error("Error enviando notificación de rechazo:", notificationError)
+          console.error("Error enviando notificación de rechazo:", notificationError);
           // Don't fail the transaction for notification errors
         }
 
@@ -112,30 +128,30 @@ export async function POST(request: NextRequest) {
               },
             },
             { session },
-          )
+          );
         }
-      })
+      });
 
-      const processingTime = Date.now() - startTime
+      const processingTime = Date.now() - startTime;
 
-      console.log(`🎉 Pago rechazado exitosamente en ${processingTime}ms`)
+      console.log(`🎉 Pago rechazado exitosamente en ${processingTime}ms`);
 
       return NextResponse.json({
         success: true,
         message: "Pago rechazado exitosamente",
-      })
+      });
     } finally {
-      await session.endSession()
+      await session.endSession();
     }
   } catch (error) {
-    const processingTime = Date.now() - startTime
+    const processingTime = Date.now() - startTime;
 
-    console.error(`❌ Error rechazando pago después de ${processingTime}ms:`, error)
-    console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace available")
+    console.error(`❌ Error rechazando pago después de ${processingTime}ms:`, error);
+    console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace available");
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error interno del servidor" },
       { status: 500 },
-    )
+    );
   }
 }

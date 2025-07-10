@@ -254,24 +254,92 @@ export async function POST(request: Request) {
       console.log("🔄 Ticket reseteado - Documentos modificados:", ticketResetResult.modifiedCount)
     }
 
-    // Send notification to user about vehicle exit
+    // 🔔 DEACTIVATE ALL SUBSCRIPTIONS FOR THIS TICKET
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type: "vehicle_exit",
-          ticketCode: ticketCode,
-          userType: "user",
-          data: {
-            plate: car.placa || "N/A",
+      if (process.env.NODE_ENV === "development") {
+        console.log("🔔 [VEHICLE-EXIT] Desactivando suscripciones para ticket:", ticketCode)
+      }
+
+      const subscriptionUpdateResult = await db.collection("ticket_subscriptions").updateMany(
+        { ticketCode: ticketCode, isActive: true },
+        {
+          $set: {
+            isActive: false,
+            expiresAt: now,
+            "lifecycle.stage": "expired",
+            "lifecycle.updatedAt": now,
           },
-        }),
-      })
+        },
+      )
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("✅ [VEHICLE-EXIT] Suscripciones desactivadas:", subscriptionUpdateResult.modifiedCount)
+      }
+    } catch (subscriptionError) {
+      console.error("❌ [VEHICLE-EXIT] Error desactivando suscripciones:", subscriptionError)
+      // Don't fail the exit if subscription cleanup fails
+    }
+
+    // Send final notifications to both user and admin about vehicle delivery
+    try {
+      if (process.env.NODE_ENV === "development") {
+        console.log("🔔 [VEHICLE-EXIT] Enviando notificaciones finales de entrega...")
+      }
+
+      // Notification to user
+      const userNotificationResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "vehicle_delivered",
+            ticketCode: ticketCode,
+            userType: "user",
+            data: {
+              plate: car.placa || "N/A",
+              duration: duracionMinutos,
+              amount: pago?.montoPagado || 0,
+            },
+          }),
+        },
+      )
+
+      // Notification to admin
+      const adminNotificationResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "vehicle_delivered",
+            ticketCode: ticketCode,
+            userType: "admin",
+            data: {
+              plate: car.placa || "N/A",
+              duration: duracionMinutos,
+              amount: pago?.montoPagado || 0,
+            },
+          }),
+        },
+      )
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("📡 [VEHICLE-EXIT] Respuestas de notificaciones:", {
+          user: { status: userNotificationResponse.status, ok: userNotificationResponse.ok },
+          admin: { status: adminNotificationResponse.status, ok: adminNotificationResponse.ok },
+        })
+      }
+
+      if (userNotificationResponse.ok && adminNotificationResponse.ok) {
+        console.log("✅ [VEHICLE-EXIT] Notificaciones finales enviadas exitosamente")
+      }
     } catch (notificationError) {
-      console.error("Error sending exit notification:", notificationError)
+      console.error("❌ [VEHICLE-EXIT] Error sending final notifications:", notificationError)
       // Don't fail the exit if notification fails
     }
 

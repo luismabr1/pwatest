@@ -201,6 +201,107 @@ async function handleCarRequest(request, method) {
         }
       }
 
+      // 🔔 CREATE USER PLACEHOLDER SUBSCRIPTION FOR THIS TICKET
+      console.log("🔔 [CARS-API] ===== INICIANDO CREACIÓN DE SUSCRIPCIÓN USER =====")
+      try {
+        console.log("🔔 [CARS-API] Creating user placeholder subscription for ticket:", carData.ticketAsociado)
+
+        // Check if user subscription already exists
+        const existingUserSub = await db.collection("ticket_subscriptions").findOne({
+          ticketCode: carData.ticketAsociado,
+          userType: "user",
+        })
+
+        console.log("🔍 [CARS-API] Existing user subscription:", existingUserSub ? "FOUND" : "NOT FOUND")
+
+        if (!existingUserSub) {
+          // Create a placeholder user subscription that will be activated when user accesses the ticket
+          const userSubscription = {
+            ticketCode: carData.ticketAsociado,
+            subscription: {
+              endpoint: `user-placeholder-${carData.ticketAsociado}-${Date.now()}`,
+              keys: {
+                p256dh: "user-placeholder-key",
+                auth: "user-placeholder-auth",
+              },
+            },
+            userType: "user",
+            isActive: false, // Will be activated when user accesses ticket
+            createdAt: now,
+            lifecycle: {
+              stage: "placeholder",
+              createdAt: now,
+              updatedAt: now,
+            },
+            autoExpire: true,
+            expiresAt: null,
+            deviceInfo: {
+              userAgent: "system-placeholder",
+              timestamp: now,
+              ip: "system",
+            },
+            isPlaceholder: true, // Mark as placeholder until user accesses
+            vehicleInfo: {
+              placa: carData.placa,
+              marca: carData.marca,
+              modelo: carData.modelo,
+              color: carData.color,
+            },
+          }
+
+          console.log("🔔 [CARS-API] Inserting user subscription:", JSON.stringify(userSubscription, null, 2))
+          const userSubscriptionResult = await db.collection("ticket_subscriptions").insertOne(userSubscription)
+          console.log("✅ [CARS-API] User placeholder subscription created:", userSubscriptionResult.insertedId)
+        } else {
+          console.log("ℹ️ [CARS-API] User subscription already exists for ticket:", carData.ticketAsociado)
+        }
+
+        console.log("🔔 [CARS-API] ===== CREACIÓN DE SUSCRIPCIÓN USER COMPLETADA =====")
+      } catch (subscriptionError) {
+        console.error("❌ [CARS-API] Error creating user subscription:", subscriptionError)
+        console.error("   Stack:", subscriptionError.stack)
+        // Don't fail the car registration if subscription fails
+      }
+
+      // 📢 SEND VEHICLE REGISTERED NOTIFICATION TO ADMIN (using real admin subscriptions)
+      try {
+        console.log("🔔 [CARS-API] Sending vehicle registered notification to admin...")
+        const notificationResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/send-notification`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "vehicle_registered",
+              ticketCode: carData.ticketAsociado,
+              userType: "admin",
+              data: {
+                plate: carData.placa || "N/A",
+                marca: carData.marca || "",
+                modelo: carData.modelo || "",
+                color: carData.color || "",
+                nombreDueño: carData.nombreDueño || "",
+                telefono: carData.telefono || "",
+                timestamp: now.toISOString(),
+              },
+            }),
+          },
+        )
+
+        if (notificationResponse.ok) {
+          const notificationResult = await notificationResponse.json()
+          console.log("✅ [CARS-API] Vehicle registered notification sent to admin:", notificationResult)
+        } else {
+          const errorText = await notificationResponse.text()
+          console.error("❌ [CARS-API] Failed to send vehicle registered notification:", errorText)
+        }
+      } catch (notificationError) {
+        console.error("❌ [CARS-API] Error sending vehicle registered notification:", notificationError)
+        // Don't fail the car registration if notification fails
+      }
+
       // Crear entrada en historial
       const historyEntry = {
         carId: result.insertedId.toString(),

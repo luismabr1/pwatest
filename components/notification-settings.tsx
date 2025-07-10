@@ -4,47 +4,87 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Bell, BellOff, Settings, CheckCircle2, AlertCircle, Download } from "lucide-react"
+import { Bell, BellOff, Settings, CheckCircle2, AlertCircle, Download, RefreshCw } from "lucide-react"
 import { usePushNotifications } from "@/hooks/use-push-notifications"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface NotificationSettingsProps {
   userType?: "user" | "admin"
+  ticketCode?: string
   className?: string
 }
 
-export default function NotificationSettings({ userType = "user", className = "" }: NotificationSettingsProps) {
+export default function NotificationSettings({
+  userType = "user",
+  ticketCode = "TEST-001",
+  className = "",
+}: NotificationSettingsProps) {
   const { isSupported, isSubscribed, isLoading, error, subscribe, unsubscribe } = usePushNotifications()
   const [testNotificationSent, setTestNotificationSent] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<(() => void) | null>(null)
+  const [isTestingNotification, setIsTestingNotification] = useState(false)
 
   const handleToggleNotifications = async () => {
     if (isSubscribed) {
       await unsubscribe()
     } else {
-      await subscribe(userType)
+      // Para tests, siempre usar TEST-001
+      await subscribe(userType, "TEST-001")
     }
   }
 
   const handleTestNotification = async () => {
+    if (isTestingNotification) return
+
+    setIsTestingNotification(true)
     try {
+      console.log("🧪 [NOTIFICATION-SETTINGS] Enviando notificación de prueba:", { userType, ticketCode: "TEST-001" })
+
       const response = await fetch("/api/send-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: userType === "admin" ? "admin_payment" : "payment_validated",
-          ticketCode: "TEST-001",
-          userType,
-          data: { amount: 50.0, plate: "ABC-123", reason: "Notificación de prueba" },
+          type: "test",
+          userType: userType,
+          ticketCode: "TEST-001", // Siempre usar TEST-001 para pruebas
+          data: {
+            message: "Notificación de prueba",
+            timestamp: new Date().toISOString(),
+            testMode: true,
+          },
         }),
       })
 
+      console.log("🧪 [NOTIFICATION-SETTINGS] Respuesta del servidor:", response.status)
+
       if (response.ok) {
-        setTestNotificationSent(true)
-        setTimeout(() => setTestNotificationSent(false), 3000)
+        const result = await response.json()
+        console.log("🧪 [NOTIFICATION-SETTINGS] Resultado:", result)
+
+        if (result.sent > 0) {
+          setTestNotificationSent(true)
+          setTimeout(() => setTestNotificationSent(false), 5000)
+        } else {
+          console.warn("⚠️ [NOTIFICATION-SETTINGS] No se enviaron notificaciones:", result.message)
+        }
+      } else {
+        const errorText = await response.text()
+        console.error("🧪 [NOTIFICATION-SETTINGS] Error en prueba:", errorText)
       }
     } catch (error) {
-      console.error("Error sending test notification:", error)
+      console.error("🧪 [NOTIFICATION-SETTINGS] Error enviando notificación de prueba:", error)
+    } finally {
+      setIsTestingNotification(false)
+    }
+  }
+
+  const handleResetSubscription = async () => {
+    if (isSubscribed) {
+      await unsubscribe()
+      // Wait a bit before resubscribing
+      setTimeout(async () => {
+        await subscribe(userType, "TEST-001")
+      }, 1000)
     }
   }
 
@@ -92,6 +132,9 @@ export default function NotificationSettings({ userType = "user", className = ""
           <div className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
             Configuración de Notificaciones
+            <Badge variant="outline" className="ml-2">
+              {userType === "admin" ? "Admin" : "Usuario"}
+            </Badge>
           </div>
           <Badge variant={isSubscribed ? "default" : "secondary"}>{isSubscribed ? "Activas" : "Inactivas"}</Badge>
         </CardTitle>
@@ -100,7 +143,17 @@ export default function NotificationSettings({ userType = "user", className = ""
         {error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {error}
+              {error.includes("VAPID") && (
+                <div className="mt-2">
+                  <Button onClick={handleResetSubscription} variant="outline" size="sm">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reiniciar Suscripción
+                  </Button>
+                </div>
+              )}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -120,8 +173,13 @@ export default function NotificationSettings({ userType = "user", className = ""
                   ? "Recibe alertas de nuevos pagos y solicitudes de salida"
                   : "Recibe actualizaciones sobre tus pagos y vehículo"}
               </p>
+              <p className="text-xs text-gray-400 mt-1">Ticket de prueba: TEST-001</p>
             </div>
-            <Button onClick={handleToggleNotifications} disabled={isLoading} variant={isSubscribed ? "destructive" : "default"}>
+            <Button
+              onClick={handleToggleNotifications}
+              disabled={isLoading}
+              variant={isSubscribed ? "destructive" : "default"}
+            >
               {isLoading ? (
                 "Procesando..."
               ) : isSubscribed ? (
@@ -139,9 +197,19 @@ export default function NotificationSettings({ userType = "user", className = ""
           </div>
 
           {isSubscribed && (
-            <div className="pt-2 border-t">
-              <Button onClick={handleTestNotification} variant="outline" size="sm" disabled={testNotificationSent}>
-                {testNotificationSent ? (
+            <div className="pt-2 border-t space-y-2">
+              <Button
+                onClick={handleTestNotification}
+                variant="outline"
+                size="sm"
+                disabled={testNotificationSent || isTestingNotification}
+              >
+                {isTestingNotification ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Enviando...
+                  </>
+                ) : testNotificationSent ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2" />
                     Enviada
@@ -153,6 +221,13 @@ export default function NotificationSettings({ userType = "user", className = ""
                   </>
                 )}
               </Button>
+
+              {error && error.includes("VAPID") && (
+                <Button onClick={handleResetSubscription} variant="outline" size="sm">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Reiniciar Suscripción
+                </Button>
+              )}
             </div>
           )}
 
@@ -192,4 +267,10 @@ export default function NotificationSettings({ userType = "user", className = ""
       </CardContent>
     </Card>
   )
+}
+
+interface BeforeInstallPromptEvent extends Event {
+  preventDefault: () => void
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
 }

@@ -1,308 +1,280 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { Clock, Car, DollarSign, Calendar, Bell, BellOff } from "lucide-react"
-import { PaymentForm } from "./payment-form"
-import { useTicketNotifications } from "@/hooks/use-ticket-notifications"
-import { toast } from "sonner"
-
-interface TicketInfo {
-  _id: string
-  codigoTicket: string
-  horaEntrada: string
-  estado: string
-  montoCalculado: number
-  montoBs: number
-  tasaCambio: number
-  ultimoPagoId?: string | null
-  carInfo?: {
-    placa: string
-    marca: string
-    modelo: string
-    color: string
-    nombreDueño: string
-    telefono: string
-  }
-}
+import { Clock, Car, DollarSign, Calendar, Bell } from "lucide-react"
+import PaymentForm from "./payment-form"
+import { usePushNotifications } from "@/hooks/use-push-notifications"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface TicketDetailsProps {
-  ticketCode: string
+  ticket: {
+    _id: string
+    codigoTicket: string
+    horaEntrada: string
+    horaSalida?: string
+    estado: string
+    montoCalculado: number
+    montoBs: number
+    tasaCambio: number
+    carInfo?: {
+      placa: string
+      marca: string
+      modelo: string
+      color: string
+      nombreDueño: string
+      telefono: string
+    }
+  }
 }
 
-export function TicketDetails({ ticketCode }: TicketDetailsProps) {
-  const [ticket, setTicket] = useState<TicketInfo | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export default function TicketDetails({ ticket }: TicketDetailsProps) {
   const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [timeElapsed, setTimeElapsed] = useState("")
+  const { isSupported, isSubscribed, subscribe } = usePushNotifications()
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
 
-  const { isSupported, isRegistered, isLoading, requestPermission, registerForTicket } =
-    useTicketNotifications(ticketCode)
+  // Auto-enable notifications when ticket is loaded
+  useEffect(() => {
+    const enableNotifications = async () => {
+      if (isSupported && !isSubscribed && ticket.codigoTicket !== "TEST-001") {
+        console.log("🔔 [TICKET-DETAILS] Auto-enabling notifications for ticket:", ticket.codigoTicket)
 
-  const fetchTicketDetails = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/ticket/${ticketCode}`)
-
-      if (!response.ok) {
-        throw new Error("Ticket no encontrado")
+        // Wait a bit to ensure the ticket is fully loaded
+        setTimeout(async () => {
+          try {
+            const success = await subscribe("user", ticket.codigoTicket)
+            if (success) {
+              setNotificationsEnabled(true)
+              console.log("✅ [TICKET-DETAILS] Notifications auto-enabled for:", ticket.codigoTicket)
+            }
+          } catch (error) {
+            console.error("❌ [TICKET-DETAILS] Error auto-enabling notifications:", error)
+          }
+        }, 2000)
       }
-
-      const data = await response.json()
-      setTicket(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido")
-    } finally {
-      setLoading(false)
     }
-  }
+
+    enableNotifications()
+  }, [ticket.codigoTicket, isSupported, isSubscribed, subscribe])
 
   useEffect(() => {
-    if (ticketCode) {
-      fetchTicketDetails()
-    }
-  }, [ticketCode])
-
-  const handleEnableNotifications = async () => {
-    try {
-      const permission = await requestPermission()
-      if (permission === "granted") {
-        const registered = await registerForTicket()
-        if (registered) {
-          toast.success("¡Notificaciones activadas! Te avisaremos cuando tu pago sea validado.")
-        } else {
-          toast.error("Error al registrar las notificaciones")
-        }
-      } else {
-        toast.error("Permisos de notificación denegados")
+    const updateTimeElapsed = () => {
+      if (ticket.horaEntrada) {
+        const entryTime = new Date(ticket.horaEntrada)
+        const now = new Date()
+        const diffMs = now.getTime() - entryTime.getTime()
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+        setTimeElapsed(`${diffHours}h ${diffMinutes}m`)
       }
-    } catch (error) {
-      console.error("Error enabling notifications:", error)
-      toast.error("Error al activar las notificaciones")
+    }
+
+    updateTimeElapsed()
+    const interval = setInterval(updateTimeElapsed, 60000) // Update every minute
+
+    return () => clearInterval(interval)
+  }, [ticket.horaEntrada])
+
+  const getStatusColor = (estado: string) => {
+    switch (estado) {
+      case "disponible":
+        return "bg-gray-500"
+      case "ocupado":
+      case "activo":
+        return "bg-blue-500"
+      case "estacionado":
+      case "estacionado_confirmado":
+        return "bg-green-500"
+      case "pagado_pendiente_validacion":
+      case "pagado_pendiente_taquilla":
+        return "bg-yellow-500"
+      case "pagado_validado":
+        return "bg-emerald-500"
+      case "salido":
+        return "bg-gray-400"
+      default:
+        return "bg-gray-500"
     }
   }
 
-  const getStatusBadge = (estado: string) => {
-    const statusMap = {
-      activo: { label: "Activo", variant: "default" as const },
-      ocupado: { label: "Ocupado", variant: "secondary" as const },
-      estacionado_pendiente: { label: "Pendiente Confirmación", variant: "outline" as const },
-      estacionado_confirmado: { label: "Estacionado", variant: "default" as const },
-      pagado_pendiente_taquilla: { label: "Pago Pendiente", variant: "outline" as const },
-      pagado_validado: { label: "Pagado", variant: "default" as const },
-      salida_autorizada: { label: "Salida Autorizada", variant: "default" as const },
-      completado: { label: "Completado", variant: "outline" as const },
+  const getStatusText = (estado: string) => {
+    switch (estado) {
+      case "disponible":
+        return "Disponible"
+      case "ocupado":
+        return "Ocupado"
+      case "activo":
+        return "Activo"
+      case "estacionado":
+        return "Estacionado"
+      case "estacionado_confirmado":
+        return "Estacionado Confirmado"
+      case "pagado_pendiente_validacion":
+        return "Pago Pendiente Validación"
+      case "pagado_pendiente_taquilla":
+        return "Pago Pendiente Taquilla"
+      case "pagado_validado":
+        return "Pago Validado"
+      case "salido":
+        return "Salido"
+      default:
+        return estado
     }
-
-    const status = statusMap[estado as keyof typeof statusMap] || {
-      label: estado,
-      variant: "secondary" as const,
-    }
-
-    return <Badge variant={status.variant}>{status.label}</Badge>
   }
 
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString("es-ES", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }
-
-  const calculateDuration = (entrada: string) => {
-    const now = new Date()
-    const entryTime = new Date(entrada)
-    const diffMs = now.getTime() - entryTime.getTime()
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
-
-    if (diffHours > 0) {
-      return `${diffHours}h ${diffMinutes}m`
-    }
-    return `${diffMinutes}m`
-  }
-
-  if (loading) {
-    return (
-      <Card className="w-full max-w-2xl mx-auto">
-        <CardContent className="p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (error || !ticket) {
-    return (
-      <Card className="w-full max-w-2xl mx-auto">
-        <CardContent className="p-6">
-          <div className="text-center text-red-600">
-            <p className="text-lg font-semibold">Error</p>
-            <p>{error || "Ticket no encontrado"}</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const canPay = ["estacionado_confirmado", "estacionado_pendiente"].includes(ticket.estado)
-  const isPaid = ["pagado_validado", "salida_autorizada", "completado"].includes(ticket.estado)
+  const canPay = ["estacionado", "estacionado_confirmado", "activo", "ocupado"].includes(ticket.estado)
+  const isPaid = ["pagado_pendiente_validacion", "pagado_pendiente_taquilla", "pagado_validado"].includes(ticket.estado)
+  const canExit = ticket.estado === "pagado_validado"
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-4">
+    <div className="space-y-6">
+      {/* Notification Status */}
+      {isSupported && (
+        <Alert
+          className={
+            notificationsEnabled || isSubscribed ? "border-green-200 bg-green-50" : "border-yellow-200 bg-yellow-50"
+          }
+        >
+          <Bell className="h-4 w-4" />
+          <AlertDescription>
+            {notificationsEnabled || isSubscribed ? (
+              <span className="text-green-800">
+                ✅ Notificaciones activadas - Recibirás actualizaciones sobre tu vehículo
+              </span>
+            ) : (
+              <span className="text-yellow-800">🔔 Las notificaciones se están configurando automáticamente...</span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Ticket Header */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl font-bold">Ticket {ticket.codigoTicket}</CardTitle>
-              <CardDescription>Detalles del estacionamiento</CardDescription>
-            </div>
-            {getStatusBadge(ticket.estado)}
+            <CardTitle className="text-2xl font-bold">Ticket {ticket.codigoTicket}</CardTitle>
+            <Badge className={`${getStatusColor(ticket.estado)} text-white`}>{getStatusText(ticket.estado)}</Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Notification Settings */}
-          {isSupported && !isPaid && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  {isRegistered ? (
-                    <Bell className="h-5 w-5 text-blue-600" />
-                  ) : (
-                    <BellOff className="h-5 w-5 text-gray-400" />
-                  )}
-                  <div>
-                    <p className="font-medium text-blue-900">
-                      {isRegistered ? "Notificaciones Activadas" : "Activar Notificaciones"}
-                    </p>
-                    <p className="text-sm text-blue-700">
-                      {isRegistered
-                        ? "Te notificaremos cuando tu pago sea validado"
-                        : "Recibe notificaciones sobre el estado de tu pago"}
-                    </p>
-                  </div>
-                </div>
-                {!isRegistered && (
-                  <Button onClick={handleEnableNotifications} disabled={isLoading} size="sm" variant="outline">
-                    {isLoading ? "Activando..." : "Activar"}
-                  </Button>
-                )}
+        <CardContent className="space-y-4">
+          {/* Time Information */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-5 w-5 text-gray-500" />
+              <div>
+                <p className="text-sm text-gray-500">Hora de Entrada</p>
+                <p className="font-medium">
+                  {ticket.horaEntrada ? new Date(ticket.horaEntrada).toLocaleString("es-ES") : "No registrada"}
+                </p>
               </div>
             </div>
-          )}
+            <div className="flex items-center space-x-2">
+              <Clock className="h-5 w-5 text-gray-500" />
+              <div>
+                <p className="text-sm text-gray-500">Tiempo Transcurrido</p>
+                <p className="font-medium">{timeElapsed || "Calculando..."}</p>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
 
           {/* Vehicle Information */}
           {ticket.carInfo && (
-            <div className="space-y-3">
-              <h3 className="text-lg font-semibold flex items-center">
-                <Car className="mr-2 h-5 w-5" />
-                Información del Vehículo
-              </h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-medium">Placa:</span>
-                  <p className="text-lg font-mono">{ticket.carInfo.placa}</p>
+            <>
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold flex items-center">
+                  <Car className="h-5 w-5 mr-2" />
+                  Información del Vehículo
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Placa</p>
+                    <p className="font-medium">{ticket.carInfo.placa || "No registrada"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Marca y Modelo</p>
+                    <p className="font-medium">
+                      {`${ticket.carInfo.marca} ${ticket.carInfo.modelo}`.trim() || "No registrado"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Color</p>
+                    <p className="font-medium">{ticket.carInfo.color || "No registrado"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Propietario</p>
+                    <p className="font-medium">{ticket.carInfo.nombreDueño || "No registrado"}</p>
+                  </div>
                 </div>
-                {ticket.carInfo.marca && (
-                  <div>
-                    <span className="font-medium">Marca:</span>
-                    <p>{ticket.carInfo.marca}</p>
-                  </div>
-                )}
-                {ticket.carInfo.modelo && (
-                  <div>
-                    <span className="font-medium">Modelo:</span>
-                    <p>{ticket.carInfo.modelo}</p>
-                  </div>
-                )}
-                {ticket.carInfo.color && (
-                  <div>
-                    <span className="font-medium">Color:</span>
-                    <p>{ticket.carInfo.color}</p>
-                  </div>
-                )}
               </div>
-            </div>
+              <Separator />
+            </>
           )}
-
-          <Separator />
-
-          {/* Time Information */}
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold flex items-center">
-              <Clock className="mr-2 h-5 w-5" />
-              Información de Tiempo
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="font-medium flex items-center">
-                  <Calendar className="mr-1 h-4 w-4" />
-                  Hora de Entrada:
-                </span>
-                <p className="text-lg">{formatDateTime(ticket.horaEntrada)}</p>
-              </div>
-              <div>
-                <span className="font-medium flex items-center">
-                  <Clock className="mr-1 h-4 w-4" />
-                  Tiempo Transcurrido:
-                </span>
-                <p className="text-lg font-mono">{calculateDuration(ticket.horaEntrada)}</p>
-              </div>
-            </div>
-          </div>
-
-          <Separator />
 
           {/* Payment Information */}
           <div className="space-y-3">
             <h3 className="text-lg font-semibold flex items-center">
-              <DollarSign className="mr-2 h-5 w-5" />
+              <DollarSign className="h-5 w-5 mr-2" />
               Información de Pago
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <span className="font-medium">Monto (USD):</span>
-                <p className="text-xl font-bold text-green-600">${ticket.montoCalculado.toFixed(2)}</p>
+                <p className="text-sm text-gray-500">Monto (USD)</p>
+                <p className="font-medium text-lg">${ticket.montoCalculado?.toFixed(2) || "0.00"}</p>
               </div>
               <div>
-                <span className="font-medium">Monto (Bs):</span>
-                <p className="text-xl font-bold text-green-600">Bs. {ticket.montoBs.toFixed(2)}</p>
+                <p className="text-sm text-gray-500">Monto (Bs)</p>
+                <p className="font-medium text-lg">Bs. {ticket.montoBs?.toFixed(2) || "0.00"}</p>
               </div>
               <div>
-                <span className="font-medium">Tasa de Cambio:</span>
-                <p className="text-lg">Bs. {ticket.tasaCambio.toFixed(2)}</p>
+                <p className="text-sm text-gray-500">Tasa de Cambio</p>
+                <p className="font-medium">Bs. {ticket.tasaCambio || "0"} / USD</p>
               </div>
             </div>
           </div>
 
+          <Separator />
+
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-4">
+          <div className="space-y-3">
             {canPay && !showPaymentForm && (
-              <Button onClick={() => setShowPaymentForm(true)} className="flex-1" size="lg">
-                <DollarSign className="mr-2 h-5 w-5" />
+              <Button onClick={() => setShowPaymentForm(true)} className="w-full" size="lg">
                 Procesar Pago
               </Button>
             )}
 
-            {showPaymentForm && (
-              <Button onClick={() => setShowPaymentForm(false)} variant="outline" className="flex-1" size="lg">
-                Cancelar Pago
-              </Button>
+            {isPaid && (
+              <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                <p className="text-yellow-800 font-medium">
+                  {ticket.estado === "pagado_pendiente_validacion" && "Pago registrado - Esperando validación"}
+                  {ticket.estado === "pagado_pendiente_taquilla" &&
+                    "Pago registrado - Esperando validación en taquilla"}
+                  {ticket.estado === "pagado_validado" && "Pago validado - Puedes solicitar la salida"}
+                </p>
+              </div>
             )}
 
-            <Button onClick={fetchTicketDetails} variant="outline" size="lg">
-              Actualizar
-            </Button>
+            {canExit && (
+              <div className="text-center p-4 bg-green-50 rounded-lg">
+                <p className="text-green-800 font-medium mb-2">
+                  ✅ Tu pago ha sido validado. Dirígete a la salida del estacionamiento.
+                </p>
+                <p className="text-sm text-green-600">El personal te ayudará con el proceso de salida.</p>
+              </div>
+            )}
+
+            {ticket.estado === "salido" && (
+              <div className="text-center p-4 bg-gray-50 rounded-lg">
+                <p className="text-gray-600 font-medium">
+                  Este ticket ya ha sido utilizado para salir del estacionamiento.
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -313,11 +285,12 @@ export function TicketDetails({ ticketCode }: TicketDetailsProps) {
           ticketCode={ticket.codigoTicket}
           amount={ticket.montoCalculado}
           amountBs={ticket.montoBs}
-          exchangeRate={ticket.tasaCambio}
-          onPaymentSuccess={() => {
+          onSuccess={() => {
             setShowPaymentForm(false)
-            fetchTicketDetails()
+            // Refresh the page to show updated status
+            window.location.reload()
           }}
+          onCancel={() => setShowPaymentForm(false)}
         />
       )}
     </div>
