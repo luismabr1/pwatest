@@ -46,7 +46,7 @@ export async function GET() {
 
     // Debug: verificar comprobantes
     pendingPayments.forEach((payment) => {
-      console.log(`���� Pago ${payment.codigoTicket} - Comprobante: ${payment.urlImagenComprobante ? "SÍ" : "NO"}`)
+      console.log(`🔍 Pago ${payment.codigoTicket} - Comprobante: ${payment.urlImagenComprobante ? "SÍ" : "NO"}`)
       console.log(`📋 Datos del pago:`, {
         codigoTicket: payment.codigoTicket,
         tipoPago: payment.tipoPago,
